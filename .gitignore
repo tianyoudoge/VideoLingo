@@ -1,0 +1,28 @@
+.DS_Store
+.idea/
+
+# SwiftPM
+.build/
+app/.build/
+
+# Go
+backend/bin/
+
+# Local binaries and downloaded assets
+bin/
+dist/
+models/
+models/*.bin
+vendor/
+MovKnown.app/
+视频翻译.app/
+SubLingo.app/
+VideoLingo.app/
+*.app/
+
+# Generated subtitles and temp files
+*.srt
+*.ass
+*.vtt
+*.log
+*.tmp
