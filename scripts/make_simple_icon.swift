@@ -24,63 +24,71 @@ func drawIcon(size: CGFloat) -> NSImage {
     let bounds = CGRect(x: 0, y: 0, width: size, height: size)
     let scale = size / 1024
 
-    color(0.045, 0.055, 0.075).setFill()
-    roundedRect(bounds.insetBy(dx: 54 * scale, dy: 54 * scale), 216 * scale).fill()
+    let outer = roundedRect(bounds.insetBy(dx: 54 * scale, dy: 54 * scale), 216 * scale)
+    NSGradient(colors: [
+        color(0.055, 0.070, 0.105),
+        color(0.090, 0.110, 0.165),
+        color(0.115, 0.085, 0.145)
+    ])?.draw(in: outer, angle: -35)
 
-    color(0.08, 0.10, 0.14).setFill()
-    roundedRect(bounds.insetBy(dx: 78 * scale, dy: 78 * scale), 192 * scale).fill()
+    color(1, 1, 1, 0.06).setFill()
+    roundedRect(CGRect(x: 120 * scale, y: 140 * scale, width: 784 * scale, height: 744 * scale), 176 * scale).fill()
 
-    let videoRect = CGRect(x: 150 * scale, y: 520 * scale, width: 470 * scale, height: 292 * scale)
-    color(0.15, 0.44, 0.68).setFill()
-    roundedRect(videoRect, 58 * scale).fill()
-    color(0.82, 0.94, 1.0, 0.95).setStroke()
-    let videoOutline = roundedRect(videoRect.insetBy(dx: 14 * scale, dy: 14 * scale), 44 * scale)
-    videoOutline.lineWidth = 22 * scale
-    videoOutline.stroke()
+    let videoRect = CGRect(x: 148 * scale, y: 548 * scale, width: 430 * scale, height: 284 * scale)
+    NSGradient(colors: [
+        color(0.21, 0.55, 0.78),
+        color(0.13, 0.35, 0.58)
+    ])?.draw(in: roundedRect(videoRect, 72 * scale), angle: -20)
+
+    color(1, 1, 1, 0.22).setFill()
+    roundedRect(CGRect(x: 202 * scale, y: 772 * scale, width: 86 * scale, height: 18 * scale), 9 * scale).fill()
+    roundedRect(CGRect(x: 318 * scale, y: 772 * scale, width: 86 * scale, height: 18 * scale), 9 * scale).fill()
+    roundedRect(CGRect(x: 434 * scale, y: 772 * scale, width: 86 * scale, height: 18 * scale), 9 * scale).fill()
 
     let play = NSBezierPath()
-    play.move(to: CGPoint(x: 342 * scale, y: 596 * scale))
-    play.line(to: CGPoint(x: 342 * scale, y: 730 * scale))
-    play.line(to: CGPoint(x: 470 * scale, y: 663 * scale))
+    play.move(to: CGPoint(x: 318 * scale, y: 618 * scale))
+    play.line(to: CGPoint(x: 318 * scale, y: 730 * scale))
+    play.line(to: CGPoint(x: 428 * scale, y: 674 * scale))
     play.close()
-    color(1.0, 1.0, 1.0).setFill()
+    color(1.0, 1.0, 1.0, 0.96).setFill()
     play.fill()
 
-    let arrow = NSBezierPath()
-    arrow.move(to: CGPoint(x: 438 * scale, y: 476 * scale))
-    arrow.curve(to: CGPoint(x: 628 * scale, y: 364 * scale), controlPoint1: CGPoint(x: 506 * scale, y: 454 * scale), controlPoint2: CGPoint(x: 570 * scale, y: 414 * scale))
-    color(0.46, 0.76, 0.95).setStroke()
-    arrow.lineWidth = 32 * scale
-    arrow.lineCapStyle = .round
-    arrow.stroke()
+    let bridge = NSBezierPath()
+    bridge.move(to: CGPoint(x: 442 * scale, y: 526 * scale))
+    bridge.line(to: CGPoint(x: 558 * scale, y: 464 * scale))
+    color(0.58, 0.76, 0.92, 0.70).setStroke()
+    bridge.lineWidth = 26 * scale
+    bridge.lineCapStyle = .round
+    bridge.stroke()
 
-    let arrowHead = NSBezierPath()
-    arrowHead.move(to: CGPoint(x: 646 * scale, y: 354 * scale))
-    arrowHead.line(to: CGPoint(x: 574 * scale, y: 348 * scale))
-    arrowHead.line(to: CGPoint(x: 618 * scale, y: 410 * scale))
-    arrowHead.close()
-    color(0.46, 0.76, 0.95).setFill()
-    arrowHead.fill()
+    let bubbleRect = CGRect(x: 458 * scale, y: 160 * scale, width: 426 * scale, height: 332 * scale)
+    color(0.96, 0.72, 0.34).setFill()
+    roundedRect(bubbleRect, 84 * scale).fill()
 
-    let translateRect = CGRect(x: 458 * scale, y: 176 * scale, width: 416 * scale, height: 310 * scale)
-    color(0.96, 0.70, 0.28).setFill()
-    roundedRect(translateRect, 72 * scale).fill()
-    color(1.0, 0.95, 0.84, 0.96).setFill()
-    roundedRect(translateRect.insetBy(dx: 34 * scale, dy: 44 * scale), 42 * scale).fill()
+    let tail = NSBezierPath()
+    tail.move(to: CGPoint(x: 548 * scale, y: 184 * scale))
+    tail.line(to: CGPoint(x: 474 * scale, y: 116 * scale))
+    tail.line(to: CGPoint(x: 618 * scale, y: 164 * scale))
+    tail.close()
+    color(0.96, 0.72, 0.34).setFill()
+    tail.fill()
 
-    let primaryAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: 118 * scale, weight: .heavy),
-        .foregroundColor: color(0.08, 0.10, 0.14)
+    let inner = CGRect(x: 516 * scale, y: 232 * scale, width: 310 * scale, height: 196 * scale)
+    color(0.995, 0.965, 0.900).setFill()
+    roundedRect(inner, 52 * scale).fill()
+
+    let markAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 94 * scale, weight: .heavy),
+        .foregroundColor: color(0.075, 0.095, 0.135)
     ]
-    let secondaryAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: 72 * scale, weight: .bold),
-        .foregroundColor: color(0.15, 0.44, 0.68)
-    ]
-    ("文" as NSString).draw(in: CGRect(x: 548 * scale, y: 282 * scale, width: 118 * scale, height: 132 * scale), withAttributes: primaryAttributes)
-    ("A" as NSString).draw(in: CGRect(x: 682 * scale, y: 286 * scale, width: 84 * scale, height: 96 * scale), withAttributes: secondaryAttributes)
-
-    color(0.08, 0.10, 0.14, 0.22).setFill()
-    roundedRect(CGRect(x: 548 * scale, y: 248 * scale, width: 216 * scale, height: 18 * scale), 9 * scale).fill()
+    let text = "A文" as NSString
+    let textSize = text.size(withAttributes: markAttributes)
+    text.draw(in: CGRect(
+        x: inner.midX - textSize.width / 2,
+        y: inner.midY - textSize.height / 2 - 2 * scale,
+        width: textSize.width,
+        height: textSize.height
+    ), withAttributes: markAttributes)
 
     image.unlockFocus()
     return image
