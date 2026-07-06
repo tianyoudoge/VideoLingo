@@ -106,6 +106,8 @@ The workflow uploads `VideoLingo-macOS-arm64.zip` to the GitHub Release for that
 
 VideoLingo is released under the MIT License. See [LICENSE](./LICENSE).
 
+Copyright (c) 2026 dogggyu.
+
 Third-party components keep their own licenses:
 
 - whisper.cpp: MIT

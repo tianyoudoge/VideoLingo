@@ -2,6 +2,9 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+let appAccent = Color(red: 0.42, green: 0.76, blue: 0.96)
+let appWarmAccent = Color(red: 0.96, green: 0.68, blue: 0.28)
+
 @main
 struct VideoLingoApp: App {
     @StateObject private var job = JobModel()
@@ -21,39 +24,40 @@ struct VideoLingoApp: App {
             )
                 .frame(minWidth: 1120, minHeight: 760)
         }
+        .defaultSize(width: 1280, height: 820)
         .commands {
-            CommandMenu("VideoLingo") {
-                Button("Model Management...") {
+            CommandMenu(t("appMenu", appSettings.appLanguage)) {
+                Button(t("modelManagement", appSettings.appLanguage)) {
                     isShowingModelSettings = true
                 }
                 .keyboardShortcut(",", modifiers: [.command])
             }
 
-            CommandMenu("Languages") {
-                Picker("App Language", selection: $appSettings.appLanguage) {
+            CommandMenu(t("languageMenu", appSettings.appLanguage)) {
+                Picker(t("appLanguage", appSettings.appLanguage), selection: $appSettings.appLanguage) {
                     ForEach(appLanguages, id: \.code) { language in
-                        Text(language.name).tag(language.code)
+                        Text(languageName(language.code, appSettings.appLanguage, includeAuto: false)).tag(language.code)
                     }
                 }
                 Divider()
-                Picker("Source Language", selection: $job.sourceLanguage) {
+                Picker(t("sourceLanguage", appSettings.appLanguage), selection: $job.sourceLanguage) {
                     ForEach(sourceLanguages, id: \.code) { language in
-                        Text(language.name).tag(language.code)
+                        Text(languageName(language.code, appSettings.appLanguage, includeAuto: true)).tag(language.code)
                     }
                 }
-                Picker("Target Language", selection: $job.targetLanguage) {
+                Picker(t("targetLanguage", appSettings.appLanguage), selection: $job.targetLanguage) {
                     ForEach(targetLanguages, id: \.code) { language in
-                        Text(language.name).tag(language.code)
+                        Text(languageName(language.code, appSettings.appLanguage, includeAuto: false)).tag(language.code)
                     }
                 }
             }
 
-            CommandMenu("Models") {
-                Button("LLM Settings...") {
+            CommandMenu(t("models", appSettings.appLanguage)) {
+                Button(t("llmSettings", appSettings.appLanguage)) {
                     isShowingModelSettings = true
                 }
                 Divider()
-                Picker("LLM Provider", selection: $modelSettings.providerID) {
+                Picker(t("llmProvider", appSettings.appLanguage), selection: $modelSettings.providerID) {
                     ForEach(modelProviders) { provider in
                         Text(provider.name).tag(provider.id)
                     }
@@ -64,7 +68,7 @@ struct VideoLingoApp: App {
                     }
                 }
                 Divider()
-                Button("Whisper Runtime") {
+                Button(t("whisperRuntime", appSettings.appLanguage)) {
                     dependencies.refresh()
                 }
             }
@@ -107,7 +111,12 @@ struct ModelProvider: Identifiable, Hashable {
     let id: String
     let name: String
     let baseURL: String
-    let model: String
+    let models: [String]
+    let isCustom: Bool
+
+    var defaultModel: String {
+        models.first ?? ""
+    }
 }
 
 struct LanguageChoice: Identifiable, Hashable {
@@ -118,12 +127,13 @@ struct LanguageChoice: Identifiable, Hashable {
 }
 
 let modelProviders: [ModelProvider] = [
-    ModelProvider(id: "deepseek", name: "DeepSeek", baseURL: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash"),
-    ModelProvider(id: "doubao", name: "豆包", baseURL: "https://ark.cn-beijing.volces.com/api/v3/chat/completions", model: "doubao-seed-1-6-flash-250715"),
-    ModelProvider(id: "bailian", name: "百炼 Qwen", baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", model: "qwen3-max"),
-    ModelProvider(id: "kimi", name: "Kimi", baseURL: "https://api.moonshot.ai/v1/chat/completions", model: "kimi-k2-turbo-preview"),
-    ModelProvider(id: "zhipu", name: "智谱", baseURL: "https://open.bigmodel.cn/api/paas/v4/chat/completions", model: "glm-4.5-flash"),
-    ModelProvider(id: "minimax", name: "MiniMax", baseURL: "https://api.minimax.io/v1/chat/completions", model: "MiniMax-M1")
+    ModelProvider(id: "deepseek", name: "DeepSeek", baseURL: "https://api.deepseek.com/chat/completions", models: ["deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"], isCustom: false),
+    ModelProvider(id: "doubao", name: "豆包", baseURL: "https://ark.cn-beijing.volces.com/api/v3/chat/completions", models: ["doubao-seed-1-6-flash-250715", "doubao-seed-1-6-250615", "doubao-seed-1-6-thinking-250715"], isCustom: false),
+    ModelProvider(id: "bailian", name: "百炼 Qwen", baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", models: ["qwen3-max", "qwen3-plus", "qwen3-turbo"], isCustom: false),
+    ModelProvider(id: "kimi", name: "Kimi", baseURL: "https://api.moonshot.ai/v1/chat/completions", models: ["kimi-k2-turbo-preview", "moonshot-v1-32k", "moonshot-v1-128k"], isCustom: false),
+    ModelProvider(id: "zhipu", name: "智谱", baseURL: "https://open.bigmodel.cn/api/paas/v4/chat/completions", models: ["glm-4.5-flash", "glm-4.5", "glm-4-flash"], isCustom: false),
+    ModelProvider(id: "minimax", name: "MiniMax", baseURL: "https://api.minimax.io/v1/chat/completions", models: ["MiniMax-M1", "MiniMax-Text-01"], isCustom: false),
+    ModelProvider(id: "custom", name: "Custom", baseURL: "", models: [""], isCustom: true)
 ]
 
 let sourceLanguages: [LanguageChoice] = [
@@ -193,6 +203,22 @@ func t(_ key: String, _ language: String) -> String {
             "es": "Reconocimiento de subtítulos de video y traducción multilingüe"
         ],
         "models": ["en": "Models", "ja": "モデル", "zh-Hans": "模型", "zh-Hant": "模型", "fr": "Modèles", "es": "Modelos"],
+        "appMenu": ["en": "VideoLingo", "ja": "VideoLingo", "zh-Hans": "VideoLingo", "zh-Hant": "VideoLingo", "fr": "VideoLingo", "es": "VideoLingo"],
+        "languageMenu": ["en": "Languages", "ja": "言語", "zh-Hans": "语言", "zh-Hant": "語言", "fr": "Langues", "es": "Idiomas"],
+        "appLanguage": ["en": "App Language", "ja": "アプリの言語", "zh-Hans": "界面语言", "zh-Hant": "介面語言", "fr": "Langue de l'app", "es": "Idioma de la app"],
+        "modelManagement": ["en": "Model Management...", "ja": "モデル管理...", "zh-Hans": "模型管理...", "zh-Hant": "模型管理...", "fr": "Gestion des modèles...", "es": "Gestión de modelos..."],
+        "modelManagementTitle": ["en": "Model Management", "ja": "モデル管理", "zh-Hans": "模型管理", "zh-Hant": "模型管理", "fr": "Gestion des modèles", "es": "Gestión de modelos"],
+        "modelManagementSubtitle": ["en": "Configure LLM providers and usage", "ja": "LLM プロバイダーと使用量を設定", "zh-Hans": "配置大模型供应商与用量", "zh-Hant": "配置大模型供應商與用量", "fr": "Configurer les fournisseurs LLM et l'utilisation", "es": "Configura proveedores LLM y uso"],
+        "llmSettings": ["en": "LLM Settings...", "ja": "LLM 設定...", "zh-Hans": "大模型设置...", "zh-Hant": "大模型設定...", "fr": "Réglages LLM...", "es": "Ajustes LLM..."],
+        "llmProvider": ["en": "LLM Provider", "ja": "LLM プロバイダー", "zh-Hans": "大模型供应商", "zh-Hant": "大模型供應商", "fr": "Fournisseur LLM", "es": "Proveedor LLM"],
+        "whisperRuntime": ["en": "Whisper Runtime", "ja": "Whisper ランタイム", "zh-Hans": "Whisper 运行组件", "zh-Hant": "Whisper 執行元件", "fr": "Runtime Whisper", "es": "Runtime Whisper"],
+        "done": ["en": "Done", "ja": "完了", "zh-Hans": "完成", "zh-Hant": "完成", "fr": "Terminé", "es": "Listo"],
+        "provider": ["en": "Provider", "ja": "プロバイダー", "zh-Hans": "供应商", "zh-Hant": "供應商", "fr": "Fournisseur", "es": "Proveedor"],
+        "keyConfigured": ["en": "Key configured", "ja": "Key 設定済み", "zh-Hans": "已配置 Key", "zh-Hant": "已配置 Key", "fr": "Key configurée", "es": "Key configurada"],
+        "configuration": ["en": "Configuration", "ja": "設定", "zh-Hans": "配置", "zh-Hant": "配置", "fr": "Configuration", "es": "Configuración"],
+        "providerName": ["en": "Provider Name", "ja": "プロバイダー名", "zh-Hans": "供应商名称", "zh-Hant": "供應商名稱", "fr": "Nom du fournisseur", "es": "Nombre del proveedor"],
+        "modelName": ["en": "Model", "ja": "モデル", "zh-Hans": "模型", "zh-Hant": "模型", "fr": "Modèle", "es": "Modelo"],
+        "customProviderHint": ["en": "Known providers use fixed endpoints and selectable models. Use Custom for your own endpoint and model name.", "ja": "既知のプロバイダーは固定エンドポイントと選択式モデルを使用します。独自のエンドポイントとモデル名は Custom を使ってください。", "zh-Hans": "已知厂商使用固定 endpoint 和模型选择。只有 Custom 支持自定义 endpoint 和模型名。", "zh-Hant": "已知廠商使用固定 endpoint 和模型選擇。只有 Custom 支援自訂 endpoint 和模型名稱。", "fr": "Les fournisseurs connus utilisent des endpoints fixes et des modèles sélectionnables. Utilisez Custom pour votre endpoint et modèle.", "es": "Los proveedores conocidos usan endpoints fijos y modelos seleccionables. Usa Custom para endpoint y modelo propios."],
         "chooseVideo": ["en": "Choose Video", "ja": "動画を選択", "zh-Hans": "选择视频", "zh-Hant": "選擇影片", "fr": "Choisir une vidéo", "es": "Elegir video"],
         "start": ["en": "Start", "ja": "開始", "zh-Hans": "开始生成", "zh-Hant": "開始產生", "fr": "Démarrer", "es": "Iniciar"],
         "stop": ["en": "Stop", "ja": "停止", "zh-Hans": "停止", "zh-Hant": "停止", "fr": "Arrêter", "es": "Detener"],
@@ -209,9 +235,37 @@ func t(_ key: String, _ language: String) -> String {
         ],
         "sourceLanguage": ["en": "Source Language", "ja": "元言語", "zh-Hans": "源语言", "zh-Hant": "來源語言", "fr": "Langue source", "es": "Idioma origen"],
         "targetLanguage": ["en": "Target Language", "ja": "翻訳先言語", "zh-Hans": "目标语言", "zh-Hant": "目標語言", "fr": "Langue cible", "es": "Idioma destino"],
-        "targetSubtitle": ["en": "Target Subtitle", "ja": "翻訳字幕", "zh-Hans": "目标字幕", "zh-Hant": "目標字幕", "fr": "Sous-titre cible", "es": "Subtítulo destino"]
+        "targetSubtitle": ["en": "Target Subtitle", "ja": "翻訳字幕", "zh-Hans": "目标字幕", "zh-Hant": "目標字幕", "fr": "Sous-titre cible", "es": "Subtítulo destino"],
+        "video": ["en": "Video", "ja": "動画", "zh-Hans": "视频", "zh-Hant": "影片", "fr": "Vidéo", "es": "Video"],
+        "outputDirectory": ["en": "Output Folder", "ja": "出力フォルダ", "zh-Hans": "输出目录", "zh-Hant": "輸出目錄", "fr": "Dossier de sortie", "es": "Carpeta de salida"],
+        "defaultOutputDirectory": ["en": "Same as video", "ja": "動画と同じ", "zh-Hans": "默认视频所在目录", "zh-Hant": "預設影片所在目錄", "fr": "Même dossier que la vidéo", "es": "Misma carpeta del video"],
+        "translationModel": ["en": "Translation Model", "ja": "翻訳モデル", "zh-Hans": "翻译模型", "zh-Hant": "翻譯模型", "fr": "Modèle de traduction", "es": "Modelo de traducción"],
+        "components": ["en": "Components", "ja": "コンポーネント", "zh-Hans": "组件", "zh-Hant": "元件", "fr": "Composants", "es": "Componentes"],
+        "installComponents": ["en": "Install Components", "ja": "コンポーネントをインストール", "zh-Hans": "安装组件", "zh-Hant": "安裝元件", "fr": "Installer les composants", "es": "Instalar componentes"]
     ]
     return table[key]?[language] ?? table[key]?["en"] ?? key
+}
+
+func languageName(_ code: String, _ appLanguage: String, includeAuto: Bool) -> String {
+    let names: [String: [String: String]] = [
+        "auto": ["en": "Auto Detect", "ja": "自動検出", "zh-Hans": "自动识别", "zh-Hant": "自動辨識", "fr": "Détection automatique", "es": "Detección automática"],
+        "en": ["en": "English", "ja": "英語", "zh-Hans": "英语", "zh-Hant": "英語", "fr": "Anglais", "es": "Inglés"],
+        "ja": ["en": "Japanese", "ja": "日本語", "zh-Hans": "日语", "zh-Hant": "日語", "fr": "Japonais", "es": "Japonés"],
+        "zh": ["en": "Chinese", "ja": "中国語", "zh-Hans": "中文", "zh-Hant": "中文", "fr": "Chinois", "es": "Chino"],
+        "zh-Hans": ["en": "Simplified Chinese", "ja": "簡体中国語", "zh-Hans": "简体中文", "zh-Hant": "簡體中文", "fr": "Chinois simplifié", "es": "Chino simplificado"],
+        "zh-Hant": ["en": "Traditional Chinese", "ja": "繁体中国語", "zh-Hans": "繁体中文", "zh-Hant": "繁體中文", "fr": "Chinois traditionnel", "es": "Chino tradicional"],
+        "fr": ["en": "French", "ja": "フランス語", "zh-Hans": "法语", "zh-Hant": "法語", "fr": "Français", "es": "Francés"],
+        "es": ["en": "Spanish", "ja": "スペイン語", "zh-Hans": "西班牙语", "zh-Hant": "西班牙語", "fr": "Espagnol", "es": "Español"],
+        "ko": ["en": "Korean", "ja": "韓国語", "zh-Hans": "韩语", "zh-Hant": "韓語", "fr": "Coréen", "es": "Coreano"],
+        "de": ["en": "German", "ja": "ドイツ語", "zh-Hans": "德语", "zh-Hant": "德語", "fr": "Allemand", "es": "Alemán"],
+        "it": ["en": "Italian", "ja": "イタリア語", "zh-Hans": "意大利语", "zh-Hant": "義大利語", "fr": "Italien", "es": "Italiano"],
+        "ru": ["en": "Russian", "ja": "ロシア語", "zh-Hans": "俄语", "zh-Hant": "俄語", "fr": "Russe", "es": "Ruso"],
+        "pt": ["en": "Portuguese", "ja": "ポルトガル語", "zh-Hans": "葡萄牙语", "zh-Hant": "葡萄牙語", "fr": "Portugais", "es": "Portugués"],
+        "th": ["en": "Thai", "ja": "タイ語", "zh-Hans": "泰语", "zh-Hant": "泰語", "fr": "Thaï", "es": "Tailandés"],
+        "vi": ["en": "Vietnamese", "ja": "ベトナム語", "zh-Hans": "越南语", "zh-Hant": "越南語", "fr": "Vietnamien", "es": "Vietnamita"]
+    ]
+    if !includeAuto && code == "auto" { return "" }
+    return names[code]?[appLanguage] ?? names[code]?["en"] ?? code
 }
 
 @MainActor
@@ -226,7 +280,10 @@ final class ModelSettings: ObservableObject {
         didSet { save("baseURL", baseURL) }
     }
     @Published var model: String {
-        didSet { save("llmModel", model) }
+        didSet {
+            save("llmModel", model)
+            save(Self.modelKey(providerID), model)
+        }
     }
     @Published var apiKey: String {
         didSet { save(apiKeyKey(providerID), apiKey) }
@@ -235,10 +292,11 @@ final class ModelSettings: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
         let storedProviderID = defaults.string(forKey: "providerID") ?? "deepseek"
+        let provider = modelProviders.first(where: { $0.id == storedProviderID }) ?? modelProviders[0]
         providerID = storedProviderID
-        providerName = defaults.string(forKey: "providerName") ?? "DeepSeek"
-        baseURL = defaults.string(forKey: "baseURL") ?? "https://api.deepseek.com/chat/completions"
-        model = defaults.string(forKey: "llmModel") ?? "deepseek-v4-flash"
+        providerName = defaults.string(forKey: "providerName") ?? provider.name
+        baseURL = provider.isCustom ? (defaults.string(forKey: "baseURL") ?? "") : provider.baseURL
+        model = defaults.string(forKey: Self.modelKey(storedProviderID)) ?? defaults.string(forKey: "llmModel") ?? provider.defaultModel
         apiKey = defaults.string(forKey: Self.apiKeyKey(storedProviderID)) ?? defaults.string(forKey: "apiKey") ?? ""
     }
 
@@ -249,8 +307,8 @@ final class ModelSettings: ObservableObject {
     func apply(_ provider: ModelProvider) {
         providerID = provider.id
         providerName = provider.name
-        baseURL = provider.baseURL
-        model = provider.model
+        baseURL = provider.isCustom ? UserDefaults.standard.string(forKey: "baseURL") ?? "" : provider.baseURL
+        model = UserDefaults.standard.string(forKey: Self.modelKey(provider.id)) ?? provider.defaultModel
         apiKey = UserDefaults.standard.string(forKey: Self.apiKeyKey(provider.id)) ?? ""
     }
 
@@ -289,6 +347,10 @@ final class ModelSettings: ObservableObject {
 
     private static func apiKeyKey(_ providerID: String) -> String {
         "apiKey.\(providerID)"
+    }
+
+    private static func modelKey(_ providerID: String) -> String {
+        "llmModel.\(providerID)"
     }
 
     private func apiKeyKey(_ providerID: String) -> String {
@@ -766,8 +828,8 @@ struct ContentView: View {
             dependencies.refresh()
         }
         .sheet(isPresented: $isShowingModelSettings) {
-            ModelSettingsView(settings: modelSettings)
-                .frame(width: 680, height: 620)
+            ModelSettingsView(settings: modelSettings, appLanguage: appSettings.appLanguage)
+                .frame(width: 680, height: 640)
         }
     }
 
@@ -836,8 +898,10 @@ struct ContentView: View {
 
     private var leftPanel: some View {
         VStack(spacing: 24) {
-            InputGlassCard(job: job, modelSettings: modelSettings, appLanguage: appSettings.appLanguage)
-            DependencyGlassCard(dependencies: dependencies)
+            InputGlassCard(job: job, modelSettings: modelSettings, appLanguage: appSettings.appLanguage) {
+                isShowingModelSettings = true
+            }
+            DependencyGlassCard(dependencies: dependencies, appLanguage: appSettings.appLanguage)
         }
     }
 
@@ -909,21 +973,22 @@ struct ContentView: View {
 
 struct DependencyGlassCard: View {
     @ObservedObject var dependencies: DependencyManager
+    let appLanguage: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("组件")
+                    Text(t("components", appLanguage))
                         .font(.headline)
                     Text(dependencies.shortStatus)
                         .font(.callout)
-                        .foregroundStyle(dependencies.isReady ? .green : .orange)
+                        .foregroundStyle(dependencies.isReady ? appAccent : appWarmAccent)
                 }
                 Spacer()
                 Image(systemName: dependencies.isReady ? "checkmark.circle.fill" : "arrow.down.circle")
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(dependencies.isReady ? .green : .orange)
+                    .foregroundStyle(dependencies.isReady ? appAccent : appWarmAccent)
             }
 
             Text(dependencies.detail)
@@ -938,13 +1003,21 @@ struct DependencyGlassCard: View {
                 Button {
                     dependencies.install()
                 } label: {
-                    Label("安装组件", systemImage: "arrow.down.to.line")
+                    Label(t("installComponents", appLanguage), systemImage: "arrow.down.to.line")
                 }
                 .buttonStyle(.borderedProminent)
             }
         }
         .padding(20)
         .glassPanel()
+        .contentShape(RoundedRectangle(cornerRadius: 14))
+        .onTapGesture {
+            if dependencies.isReady {
+                dependencies.refresh()
+            } else if !dependencies.isInstalling {
+                dependencies.install()
+            }
+        }
     }
 }
 
@@ -959,7 +1032,7 @@ struct ProgressGlassCard: View {
                     .monospacedDigit()
                 Image(systemName: iconName)
                     .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.42, green: 0.95, blue: 0.48))
+                    .foregroundStyle(appAccent)
             }
             .frame(width: 150, alignment: .leading)
 
@@ -1012,7 +1085,12 @@ struct ProgressGlassCard: View {
 
 struct ModelSettingsView: View {
     @ObservedObject var settings: ModelSettings
+    let appLanguage: String
     @Environment(\.dismiss) private var dismiss
+
+    private var selectedProvider: ModelProvider {
+        modelProviders.first(where: { $0.id == settings.providerID }) ?? modelProviders[0]
+    }
 
     var body: some View {
         ZStack {
@@ -1021,19 +1099,19 @@ struct ModelSettingsView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("模型管理")
+                            Text(t("modelManagementTitle", appLanguage))
                                 .font(.title2.weight(.semibold))
-                            Text("配置 OpenAI-compatible 翻译模型")
+                            Text(t("modelManagementSubtitle", appLanguage))
                                 .font(.callout)
                                 .foregroundStyle(.white.opacity(0.64))
                         }
                         Spacer()
-                        Button("完成") { dismiss() }
+                        Button(t("done", appLanguage)) { dismiss() }
                             .buttonStyle(.borderedProminent)
                     }
 
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("供应商")
+                        Text(t("provider", appLanguage))
                             .font(.headline)
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                             ForEach(modelProviders) { provider in
@@ -1044,7 +1122,7 @@ struct ModelSettingsView: View {
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(provider.name)
                                                 .font(.callout.weight(.semibold))
-                                            Text(settings.hasAPIKey(provider) ? "\(provider.model) · Key configured" : provider.model)
+                                            Text(settings.hasAPIKey(provider) ? "\(provider.defaultModel) · \(t("keyConfigured", appLanguage))" : provider.defaultModel)
                                                 .font(.caption)
                                                 .foregroundStyle(.white.opacity(0.58))
                                                 .lineLimit(1)
@@ -1052,14 +1130,14 @@ struct ModelSettingsView: View {
                                         Spacer()
                                         if settings.providerID == provider.id {
                                             Image(systemName: "checkmark.circle.fill")
-                                                .foregroundStyle(.green)
+                                                .foregroundStyle(appAccent)
                                         }
                                     }
                                     .padding(12)
                                     .background(Color.white.opacity(settings.providerID == provider.id ? 0.14 : 0.07), in: RoundedRectangle(cornerRadius: 10))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 10)
-                                            .strokeBorder(settings.hasAPIKey(provider) ? Color.green.opacity(0.42) : Color.white.opacity(0.06))
+                                            .strokeBorder(settings.hasAPIKey(provider) ? appAccent.opacity(0.46) : Color.white.opacity(0.06))
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -1070,23 +1148,35 @@ struct ModelSettingsView: View {
                     .glassPanel()
 
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("接口")
+                        Text(t("configuration", appLanguage))
                             .font(.headline)
 
-                        TextField("供应商名称", text: $settings.providerName)
-                            .textFieldStyle(.plain)
-                            .padding(12)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        if selectedProvider.isCustom {
+                            TextField(t("providerName", appLanguage), text: $settings.providerName)
+                                .textFieldStyle(.plain)
+                                .padding(12)
+                                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
 
-                        TextField("Base URL", text: $settings.baseURL)
-                            .textFieldStyle(.plain)
-                            .padding(12)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                            TextField("Base URL", text: $settings.baseURL)
+                                .textFieldStyle(.plain)
+                                .padding(12)
+                                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
 
-                        TextField("模型名称", text: $settings.model)
-                            .textFieldStyle(.plain)
-                            .padding(12)
+                            TextField(t("modelName", appLanguage), text: $settings.model)
+                                .textFieldStyle(.plain)
+                                .padding(12)
+                                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        } else {
+                            Picker(t("modelName", appLanguage), selection: $settings.model) {
+                                ForEach(selectedProvider.models, id: \.self) { model in
+                                    Text(model).tag(model)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
                             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        }
 
                         SecureField("API Key", text: $settings.apiKey)
                             .textFieldStyle(.plain)
@@ -1099,14 +1189,12 @@ struct ModelSettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Token Usage")
                             .font(.headline)
-                        ForEach(modelProviders) { provider in
-                            ModelUsageRow(provider: provider, settings: settings)
-                        }
+                        CurrentModelUsage(settings: settings)
                     }
                     .padding(18)
                     .glassPanel()
 
-                    Text("供应商名称和默认模型可直接修改。只要兼容 Chat Completions 接口，就可以填自定义地址和模型名。")
+                    Text(t("customProviderHint", appLanguage))
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.54))
                 }
@@ -1117,30 +1205,30 @@ struct ModelSettingsView: View {
     }
 }
 
-struct ModelUsageRow: View {
-    let provider: ModelProvider
+struct CurrentModelUsage: View {
     @ObservedObject var settings: ModelSettings
 
     var body: some View {
-        let stats = settings.tokenStats(provider: provider.name, model: provider.model)
-        HStack(spacing: 12) {
+        let stats = settings.tokenStats(provider: settings.providerName, model: settings.model)
+        VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(provider.name)
+                Text(settings.displayName)
                     .font(.caption.weight(.semibold))
-                Text(provider.model)
-                    .font(.caption2)
+                Text("prompt / cache hit / cache miss / output / total")
+                    .font(.caption)
                     .foregroundStyle(.white.opacity(0.50))
-                    .lineLimit(1)
             }
-            Spacer()
-            Text("in \(stats.promptTokens)")
-            Text("hit \(stats.cachedPromptTokens)")
-            Text("miss \(stats.uncachedPromptTokens)")
-            Text("out \(stats.completionTokens)")
-            Text("total \(stats.totalTokens)")
+            HStack(spacing: 16) {
+                Text("\(stats.promptTokens)")
+                Text("\(stats.cachedPromptTokens)")
+                Text("\(stats.uncachedPromptTokens)")
+                Text("\(stats.completionTokens)")
+                Text("\(stats.totalTokens)")
+            }
+            .font(.system(size: 18, weight: .semibold, design: .rounded).monospacedDigit())
+            .foregroundStyle(.white.opacity(0.86))
         }
-        .font(.caption.monospacedDigit())
-        .foregroundStyle(.white.opacity(0.72))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1148,6 +1236,7 @@ struct InputGlassCard: View {
     @ObservedObject var job: JobModel
     @ObservedObject var modelSettings: ModelSettings
     let appLanguage: String
+    let onModelTap: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -1157,14 +1246,25 @@ struct InputGlassCard: View {
                 Spacer()
                 Text(t("drag", appLanguage))
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(Color(red: 0.54, green: 1.0, blue: 0.46))
+                    .foregroundStyle(appAccent)
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                CompactPath(title: "视频", value: job.videoName, icon: "film")
+                Button {
+                    job.chooseVideo()
+                } label: {
+                    CompactPath(title: t("video", appLanguage), value: job.videoName, icon: "film")
+                }
+                .buttonStyle(.plain)
 
                 HStack {
-                    CompactPath(title: "输出目录", value: job.outputDir?.path ?? "默认视频所在目录", icon: "folder")
+                    Button {
+                        job.chooseOutputDir()
+                    } label: {
+                        CompactPath(title: t("outputDirectory", appLanguage), value: job.outputDir?.path ?? t("defaultOutputDirectory", appLanguage), icon: "folder")
+                    }
+                    .buttonStyle(.plain)
+
                     Button {
                         job.chooseOutputDir()
                     } label: {
@@ -1176,7 +1276,7 @@ struct InputGlassCard: View {
 
                 Picker(t("sourceLanguage", appLanguage), selection: $job.sourceLanguage) {
                     ForEach(sourceLanguages, id: \.code) { language in
-                        Text(language.name).tag(language.code)
+                        Text(languageName(language.code, appLanguage, includeAuto: true)).tag(language.code)
                     }
                 }
                 .pickerStyle(.menu)
@@ -1186,7 +1286,7 @@ struct InputGlassCard: View {
 
                 Picker(t("targetLanguage", appLanguage), selection: $job.targetLanguage) {
                     ForEach(targetLanguages, id: \.code) { language in
-                        Text(language.name).tag(language.code)
+                        Text(languageName(language.code, appLanguage, includeAuto: false)).tag(language.code)
                     }
                 }
                 .pickerStyle(.menu)
@@ -1194,7 +1294,12 @@ struct InputGlassCard: View {
                 .padding(.vertical, 8)
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
 
-                CompactPath(title: "翻译模型", value: modelSettings.displayName, icon: "cpu")
+                Button {
+                    onModelTap()
+                } label: {
+                    CompactPath(title: t("translationModel", appLanguage), value: modelSettings.displayName, icon: "cpu")
+                }
+                .buttonStyle(.plain)
 
                 Divider()
                     .opacity(0.45)
@@ -1301,7 +1406,7 @@ struct DropOverlay: View {
             VStack(spacing: 14) {
                 Image(systemName: "film.stack.fill")
                     .font(.system(size: 54, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.50, green: 1.0, blue: 0.42))
+                    .foregroundStyle(appAccent)
                 Text("松开导入视频")
                     .font(.title2.weight(.semibold))
                 Text("VideoLingo 会使用视频所在目录作为默认输出目录")
@@ -1313,7 +1418,7 @@ struct DropOverlay: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
             .overlay(
                 RoundedRectangle(cornerRadius: 18)
-                    .strokeBorder(Color(red: 0.50, green: 1.0, blue: 0.42).opacity(0.58), lineWidth: 1.5)
+                    .strokeBorder(appAccent.opacity(0.58), lineWidth: 1.5)
             )
             .shadow(color: .black.opacity(0.36), radius: 36, x: 0, y: 18)
         }
@@ -1331,7 +1436,7 @@ struct BrandIcon: View {
                 .scaledToFit()
                 .frame(width: size, height: size)
                 .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
-                .shadow(color: Color(red: 0.34, green: 0.95, blue: 0.40).opacity(0.28), radius: size * 0.20, x: 0, y: size * 0.08)
+                .shadow(color: appAccent.opacity(0.24), radius: size * 0.20, x: 0, y: size * 0.08)
         } else {
             Image(systemName: "captions.bubble.fill")
                 .font(.system(size: size * 0.62, weight: .semibold))
@@ -1349,7 +1454,7 @@ struct CompactPath: View {
         HStack(spacing: 10) {
             Image(systemName: icon)
                 .frame(width: 20)
-                .foregroundStyle(Color(red: 0.36, green: 0.90, blue: 0.42))
+                .foregroundStyle(appAccent)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.caption)
@@ -1387,9 +1492,9 @@ struct AppBackdrop: View {
     var body: some View {
         LinearGradient(
             colors: [
-                Color(red: 0.04, green: 0.12, blue: 0.10),
-                Color(red: 0.08, green: 0.26, blue: 0.20),
-                Color(red: 0.20, green: 0.34, blue: 0.17)
+                Color(red: 0.055, green: 0.065, blue: 0.085),
+                Color(red: 0.095, green: 0.115, blue: 0.145),
+                Color(red: 0.155, green: 0.125, blue: 0.155)
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing

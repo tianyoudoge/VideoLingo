@@ -106,6 +106,8 @@ git push origin v0.1.0
 
 VideoLingo 使用 MIT License。见 [LICENSE](./LICENSE)。
 
+Copyright (c) 2026 dogggyu。
+
 第三方组件遵循各自许可证：
 
 - whisper.cpp: MIT
