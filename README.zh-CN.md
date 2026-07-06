@@ -108,8 +108,10 @@ VideoLingo 使用 MIT License。见 [LICENSE](./LICENSE)。
 
 Copyright (c) 2026 dogggyu。
 
+第三方组件和运行时依赖见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
+
 第三方组件遵循各自许可证：
 
-- whisper.cpp: MIT
-- Whisper 模型权重：见上游 Hugging Face 仓库说明
-- FFmpeg：取决于下载构建，遵循 LGPL/GPL
+- release app 内置 whisper.cpp，遵循 MIT。
+- release app 不内置 FFmpeg/FFprobe，也不内置 Whisper 模型权重。
+- 运行时下载的 FFmpeg/FFprobe 取决于具体构建，可能是 LGPL/GPL/nonfree，不属于 VideoLingo 的 MIT 授权范围。

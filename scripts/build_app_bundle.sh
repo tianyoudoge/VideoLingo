@@ -13,6 +13,8 @@ cp "$EXE" "$APP/Contents/MacOS/VideoLingoApp"
 cp "$ROOT/bin/videolingo-backend" "$APP/Contents/MacOS/videolingo-backend"
 cp "$ROOT/app/Assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cp "$ROOT/app/Assets/UI/app-icon.png" "$APP/Contents/Resources/app-icon.png"
+cp "$ROOT/LICENSE" "$APP/Contents/Resources/licenses/VideoLingo-LICENSE"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/licenses/THIRD_PARTY_NOTICES.md"
 
 cp "$ROOT/vendor/whisper.cpp/build/bin/whisper-cli" "$APP/Contents/Resources/whisper/whisper-cli"
 cp "$ROOT/vendor/whisper.cpp/build/bin/"lib*.dylib "$APP/Contents/Resources/whisper/"

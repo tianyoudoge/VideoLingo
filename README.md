@@ -108,8 +108,10 @@ VideoLingo is released under the MIT License. See [LICENSE](./LICENSE).
 
 Copyright (c) 2026 dogggyu.
 
+See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for bundled and runtime third-party components.
+
 Third-party components keep their own licenses:
 
-- whisper.cpp: MIT
-- Whisper model weights: see the upstream Hugging Face repository
-- FFmpeg: LGPL/GPL depending on the downloaded build
+- The release app bundles whisper.cpp under MIT.
+- The release app does not bundle FFmpeg/FFprobe or Whisper model weights.
+- Runtime FFmpeg/FFprobe downloads are governed by the downloaded build's own LGPL/GPL/nonfree status.
