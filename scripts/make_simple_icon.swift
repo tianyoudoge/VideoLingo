@@ -26,13 +26,31 @@ func drawIcon(size: CGFloat) -> NSImage {
 
     let outer = roundedRect(bounds.insetBy(dx: 54 * scale, dy: 54 * scale), 216 * scale)
     NSGradient(colors: [
-        color(0.055, 0.070, 0.105),
-        color(0.090, 0.110, 0.165),
-        color(0.115, 0.085, 0.145)
+        color(0.040, 0.055, 0.095),
+        color(0.070, 0.125, 0.185),
+        color(0.135, 0.090, 0.175)
     ])?.draw(in: outer, angle: -35)
+
+    color(0.25, 0.55, 0.82, 0.22).setFill()
+    roundedRect(CGRect(x: 90 * scale, y: 584 * scale, width: 512 * scale, height: 286 * scale), 142 * scale).fill()
+
+    color(0.98, 0.70, 0.32, 0.18).setFill()
+    roundedRect(CGRect(x: 430 * scale, y: 112 * scale, width: 494 * scale, height: 326 * scale), 160 * scale).fill()
 
     color(1, 1, 1, 0.06).setFill()
     roundedRect(CGRect(x: 120 * scale, y: 140 * scale, width: 784 * scale, height: 744 * scale), 176 * scale).fill()
+
+    let sheen = NSBezierPath()
+    sheen.move(to: CGPoint(x: 170 * scale, y: 842 * scale))
+    sheen.curve(to: CGPoint(x: 842 * scale, y: 628 * scale), controlPoint1: CGPoint(x: 342 * scale, y: 912 * scale), controlPoint2: CGPoint(x: 664 * scale, y: 838 * scale))
+    color(1, 1, 1, 0.055).setStroke()
+    sheen.lineWidth = 18 * scale
+    sheen.lineCapStyle = .round
+    sheen.stroke()
+
+    color(0.02, 0.03, 0.05, 0.18).setFill()
+    roundedRect(CGRect(x: 170 * scale, y: 132 * scale, width: 724 * scale, height: 130 * scale), 65 * scale).fill()
+
 
     let videoRect = CGRect(x: 148 * scale, y: 548 * scale, width: 430 * scale, height: 284 * scale)
     NSGradient(colors: [
