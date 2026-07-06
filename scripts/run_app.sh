@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export VIDEOLINGO_BACKEND="${VIDEOLINGO_BACKEND:-$ROOT/bin/videolingo-backend}"
-export VIDEOLINGO_WHISPER_MODEL="${VIDEOLINGO_WHISPER_MODEL:-$ROOT/models/ggml-medium.bin}"
-export VIDEOLINGO_WHISPER_BIN="${VIDEOLINGO_WHISPER_BIN:-$ROOT/bin/whisper-cli}"
+export CAPTIONFLOW_BACKEND="${CAPTIONFLOW_BACKEND:-$ROOT/bin/captionflow-backend}"
+export CAPTIONFLOW_WHISPER_MODEL="${CAPTIONFLOW_WHISPER_MODEL:-$ROOT/models/ggml-medium.bin}"
+export CAPTIONFLOW_WHISPER_BIN="${CAPTIONFLOW_WHISPER_BIN:-$ROOT/bin/whisper-cli}"
 
-swift run --package-path "$ROOT/app" VideoLingoApp
+swift run --package-path "$ROOT/app" CaptionFlowApp

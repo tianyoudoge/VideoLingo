@@ -87,7 +87,7 @@ type Event struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fatalf("usage: videolingo-backend transcribe --input video.mp4 --api-key $DEEPSEEK_API_KEY --model models/ggml-small-q5_1.bin")
+		fatalf("usage: captionflow-backend transcribe --input video.mp4 --api-key $DEEPSEEK_API_KEY --model models/ggml-small-q5_1.bin")
 	}
 
 	switch os.Args[1] {
@@ -193,7 +193,7 @@ func runTranscribe(ctx context.Context, cfg Config) error {
 	base := trimExt(filepath.Base(cfg.Input))
 	sourceSRT := filepath.Join(cfg.OutputDir, base+".source.srt")
 	targetSRT := filepath.Join(cfg.OutputDir, base+"."+targetSubtitleSuffix(cfg.TargetLanguage)+".srt")
-	tmp, err := os.MkdirTemp("", "videolingo-*")
+	tmp, err := os.MkdirTemp("", "captionflow-*")
 	if err != nil {
 		return err
 	}

@@ -17,7 +17,7 @@ vendor/
 MovKnown.app/
 视频翻译.app/
 SubLingo.app/
-VideoLingo.app/
+CaptionFlow.app/
 *.app/
 
 # Generated subtitles and temp files

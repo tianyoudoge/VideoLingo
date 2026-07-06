@@ -2,25 +2,25 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="$ROOT/VideoLingo.app"
-EXE="$ROOT/app/.build/debug/VideoLingoApp"
+APP="$ROOT/CaptionFlow.app"
+EXE="$ROOT/app/.build/debug/CaptionFlowApp"
 
 swift build --package-path "$ROOT/app"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/whisper" "$APP/Contents/Resources/licenses"
-cp "$EXE" "$APP/Contents/MacOS/VideoLingoApp"
-cp "$ROOT/bin/videolingo-backend" "$APP/Contents/MacOS/videolingo-backend"
+cp "$EXE" "$APP/Contents/MacOS/CaptionFlowApp"
+cp "$ROOT/bin/captionflow-backend" "$APP/Contents/MacOS/captionflow-backend"
 cp "$ROOT/app/Assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cp "$ROOT/app/Assets/UI/app-icon.png" "$APP/Contents/Resources/app-icon.png"
-cp "$ROOT/LICENSE" "$APP/Contents/Resources/licenses/VideoLingo-LICENSE"
+cp "$ROOT/LICENSE" "$APP/Contents/Resources/licenses/CaptionFlow-LICENSE"
 cp "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/licenses/THIRD_PARTY_NOTICES.md"
 
 cp "$ROOT/vendor/whisper.cpp/build/bin/whisper-cli" "$APP/Contents/Resources/whisper/whisper-cli"
 cp "$ROOT/vendor/whisper.cpp/build/bin/"lib*.dylib "$APP/Contents/Resources/whisper/"
 cp "$ROOT/vendor/whisper.cpp/LICENSE" "$APP/Contents/Resources/licenses/whisper.cpp-LICENSE"
 
-chmod +x "$APP/Contents/MacOS/videolingo-backend" "$APP/Contents/Resources/whisper/whisper-cli"
+chmod +x "$APP/Contents/MacOS/captionflow-backend" "$APP/Contents/Resources/whisper/whisper-cli"
 for binary in "$APP/Contents/Resources/whisper/whisper-cli" "$APP/Contents/Resources/whisper/"*.dylib; do
   install_name_tool -add_rpath "@loader_path" "$binary" 2>/dev/null || true
   install_name_tool -delete_rpath "$ROOT/vendor/whisper.cpp/build/bin" "$binary" 2>/dev/null || true
@@ -34,13 +34,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDevelopmentRegion</key>
   <string>zh_CN</string>
   <key>CFBundleExecutable</key>
-  <string>VideoLingoApp</string>
+  <string>CaptionFlowApp</string>
   <key>CFBundleIdentifier</key>
-  <string>app.videolingo.desktop</string>
+  <string>app.captionflow.desktop</string>
   <key>CFBundleName</key>
-  <string>VideoLingo</string>
+  <string>CaptionFlow</string>
   <key>CFBundleDisplayName</key>
-  <string>VideoLingo</string>
+  <string>CaptionFlow</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundlePackageType</key>

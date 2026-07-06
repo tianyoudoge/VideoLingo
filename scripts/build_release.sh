@@ -15,7 +15,7 @@ swift "$ROOT/scripts/make_simple_icon.swift"
 iconutil -c icns "$ROOT/app/Assets/AppIcon.iconset" -o "$ROOT/app/Assets/AppIcon.icns"
 "$ROOT/scripts/build_app_bundle.sh"
 
-rm -f "$DIST/VideoLingo-macOS-arm64.zip"
-ditto -c -k --keepParent "$ROOT/VideoLingo.app" "$DIST/VideoLingo-macOS-arm64.zip"
+rm -f "$DIST/CaptionFlow-macOS-arm64.zip"
+ditto -c -k --keepParent "$ROOT/CaptionFlow.app" "$DIST/CaptionFlow-macOS-arm64.zip"
 
-echo "Release artifact: $DIST/VideoLingo-macOS-arm64.zip"
+echo "Release artifact: $DIST/CaptionFlow-macOS-arm64.zip"

@@ -71,6 +71,11 @@ func drawIcon(size: CGFloat) -> NSImage {
     color(1.0, 1.0, 1.0, 0.96).setFill()
     play.fill()
 
+    color(1, 1, 1, 0.82).setFill()
+    roundedRect(CGRect(x: 246 * scale, y: 592 * scale, width: 286 * scale, height: 22 * scale), 11 * scale).fill()
+    color(1, 1, 1, 0.58).setFill()
+    roundedRect(CGRect(x: 284 * scale, y: 558 * scale, width: 210 * scale, height: 18 * scale), 9 * scale).fill()
+
     let bridge = NSBezierPath()
     bridge.move(to: CGPoint(x: 442 * scale, y: 526 * scale))
     bridge.line(to: CGPoint(x: 558 * scale, y: 464 * scale))
@@ -95,18 +100,11 @@ func drawIcon(size: CGFloat) -> NSImage {
     color(0.995, 0.965, 0.900).setFill()
     roundedRect(inner, 52 * scale).fill()
 
-    let markAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: 94 * scale, weight: .heavy),
-        .foregroundColor: color(0.075, 0.095, 0.135)
-    ]
-    let text = "A文" as NSString
-    let textSize = text.size(withAttributes: markAttributes)
-    text.draw(in: CGRect(
-        x: inner.midX - textSize.width / 2,
-        y: inner.midY - textSize.height / 2 - 2 * scale,
-        width: textSize.width,
-        height: textSize.height
-    ), withAttributes: markAttributes)
+    color(0.075, 0.095, 0.135).setFill()
+    roundedRect(CGRect(x: 572 * scale, y: 356 * scale, width: 196 * scale, height: 28 * scale), 14 * scale).fill()
+    roundedRect(CGRect(x: 552 * scale, y: 306 * scale, width: 236 * scale, height: 26 * scale), 13 * scale).fill()
+    color(0.075, 0.095, 0.135, 0.62).setFill()
+    roundedRect(CGRect(x: 594 * scale, y: 262 * scale, width: 152 * scale, height: 22 * scale), 11 * scale).fill()
 
     image.unlockFocus()
     return image

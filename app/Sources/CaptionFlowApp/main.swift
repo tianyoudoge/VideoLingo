@@ -6,7 +6,7 @@ let appAccent = Color(red: 0.42, green: 0.76, blue: 0.96)
 let appWarmAccent = Color(red: 0.96, green: 0.68, blue: 0.28)
 
 @main
-struct VideoLingoApp: App {
+struct CaptionFlowApp: App {
     @StateObject private var job = JobModel()
     @StateObject private var dependencies = DependencyManager()
     @StateObject private var modelSettings = ModelSettings()
@@ -203,7 +203,7 @@ func t(_ key: String, _ language: String) -> String {
             "es": "Reconocimiento de subtítulos de video y traducción multilingüe"
         ],
         "models": ["en": "Models", "ja": "モデル", "zh-Hans": "模型", "zh-Hant": "模型", "fr": "Modèles", "es": "Modelos"],
-        "appMenu": ["en": "VideoLingo", "ja": "VideoLingo", "zh-Hans": "VideoLingo", "zh-Hant": "VideoLingo", "fr": "VideoLingo", "es": "VideoLingo"],
+        "appMenu": ["en": "CaptionFlow", "ja": "CaptionFlow", "zh-Hans": "CaptionFlow", "zh-Hant": "CaptionFlow", "fr": "CaptionFlow", "es": "CaptionFlow"],
         "languageMenu": ["en": "Languages", "ja": "言語", "zh-Hans": "语言", "zh-Hant": "語言", "fr": "Langues", "es": "Idiomas"],
         "appLanguage": ["en": "App Language", "ja": "アプリの言語", "zh-Hans": "界面语言", "zh-Hant": "介面語言", "fr": "Langue de l'app", "es": "Idioma de la app"],
         "modelManagement": ["en": "Model Management...", "ja": "モデル管理...", "zh-Hans": "模型管理...", "zh-Hant": "模型管理...", "fr": "Gestion des modèles...", "es": "Gestión de modelos..."],
@@ -389,6 +389,11 @@ final class DependencyManager: ObservableObject {
 
     var appSupportURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("CaptionFlow", isDirectory: true)
+    }
+
+    var legacyAppSupportURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("VideoLingo", isDirectory: true)
     }
 
@@ -405,6 +410,10 @@ final class DependencyManager: ObservableObject {
         if FileManager.default.fileExists(atPath: installed) {
             return installed
         }
+        let legacy = legacyAppSupportURL.appendingPathComponent("models/ggml-small-q5_1.bin").path
+        if FileManager.default.fileExists(atPath: legacy) {
+            return legacy
+        }
         let devMedium = defaultProjectRoot() + "/models/ggml-medium.bin"
         if FileManager.default.fileExists(atPath: devMedium) {
             return devMedium
@@ -417,6 +426,10 @@ final class DependencyManager: ObservableObject {
         if FileManager.default.fileExists(atPath: installed) {
             return installed
         }
+        let legacy = legacyAppSupportURL.appendingPathComponent("tools/ffmpeg").path
+        if FileManager.default.fileExists(atPath: legacy) {
+            return legacy
+        }
         return firstExistingPath(["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]) ?? installed
     }
 
@@ -424,6 +437,10 @@ final class DependencyManager: ObservableObject {
         let installed = toolsURL.appendingPathComponent("ffprobe").path
         if FileManager.default.fileExists(atPath: installed) {
             return installed
+        }
+        let legacy = legacyAppSupportURL.appendingPathComponent("tools/ffprobe").path
+        if FileManager.default.fileExists(atPath: legacy) {
+            return legacy
         }
         return firstExistingPath(["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "/usr/bin/ffprobe"]) ?? installed
     }
@@ -838,7 +855,7 @@ struct ContentView: View {
             BrandIcon(size: 56)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("VideoLingo")
+                Text("CaptionFlow")
                     .font(.system(size: 24, weight: .semibold))
                 Text(t("subtitle", appSettings.appLanguage))
                     .font(.callout)
@@ -1409,7 +1426,7 @@ struct DropOverlay: View {
                     .foregroundStyle(appAccent)
                 Text("松开导入视频")
                     .font(.title2.weight(.semibold))
-                Text("VideoLingo 会使用视频所在目录作为默认输出目录")
+                Text("CaptionFlow 会使用视频所在目录作为默认输出目录")
                     .font(.callout)
                     .foregroundStyle(.white.opacity(0.68))
             }
@@ -1539,22 +1556,30 @@ func isVideoFile(_ url: URL) -> Bool {
 }
 
 func defaultBackendPath() -> String {
-    let env = ProcessInfo.processInfo.environment["VIDEOLINGO_BACKEND"] ?? ProcessInfo.processInfo.environment["MOVKNOWN_BACKEND"]
+    let env = ProcessInfo.processInfo.environment["CAPTIONFLOW_BACKEND"]
+        ?? ProcessInfo.processInfo.environment["VIDEOLINGO_BACKEND"]
+        ?? ProcessInfo.processInfo.environment["MOVKNOWN_BACKEND"]
     if let env, !env.isEmpty { return env }
-    if let bundled = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("videolingo-backend"),
+    if let bundled = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("captionflow-backend"),
        FileManager.default.fileExists(atPath: bundled.path) {
         return bundled.path
     }
-    return defaultProjectRoot() + "/bin/videolingo-backend"
+    return defaultProjectRoot() + "/bin/captionflow-backend"
 }
 
 func defaultModelPath() -> String {
-    let env = ProcessInfo.processInfo.environment["VIDEOLINGO_WHISPER_MODEL"] ?? ProcessInfo.processInfo.environment["MOVKNOWN_WHISPER_MODEL"]
+    let env = ProcessInfo.processInfo.environment["CAPTIONFLOW_WHISPER_MODEL"]
+        ?? ProcessInfo.processInfo.environment["VIDEOLINGO_WHISPER_MODEL"]
+        ?? ProcessInfo.processInfo.environment["MOVKNOWN_WHISPER_MODEL"]
     if let env, !env.isEmpty { return env }
-    let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("VideoLingo/models/ggml-small-q5_1.bin")
+    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    let appSupport = base.appendingPathComponent("CaptionFlow/models/ggml-small-q5_1.bin")
     if FileManager.default.fileExists(atPath: appSupport.path) {
         return appSupport.path
+    }
+    let legacy = base.appendingPathComponent("VideoLingo/models/ggml-small-q5_1.bin")
+    if FileManager.default.fileExists(atPath: legacy.path) {
+        return legacy.path
     }
     let medium = defaultProjectRoot() + "/models/ggml-medium.bin"
     if FileManager.default.fileExists(atPath: medium) {
@@ -1564,7 +1589,9 @@ func defaultModelPath() -> String {
 }
 
 func defaultWhisperBin() -> String {
-    let env = ProcessInfo.processInfo.environment["VIDEOLINGO_WHISPER_BIN"] ?? ProcessInfo.processInfo.environment["MOVKNOWN_WHISPER_BIN"]
+    let env = ProcessInfo.processInfo.environment["CAPTIONFLOW_WHISPER_BIN"]
+        ?? ProcessInfo.processInfo.environment["VIDEOLINGO_WHISPER_BIN"]
+        ?? ProcessInfo.processInfo.environment["MOVKNOWN_WHISPER_BIN"]
     if let env, !env.isEmpty { return env }
     if let bundled = Bundle.main.resourceURL?.appendingPathComponent("whisper/whisper-cli"),
        FileManager.default.fileExists(atPath: bundled.path) {
@@ -1596,7 +1623,7 @@ func runTool(_ executable: String, _ arguments: [String]) throws {
     if process.terminationStatus != 0 {
         let data = errorPipe.fileHandleForReading.readDataToEndOfFile()
         let message = String(data: data, encoding: .utf8) ?? executable
-        throw NSError(domain: "VideoLingo", code: Int(process.terminationStatus), userInfo: [
+        throw NSError(domain: "CaptionFlow", code: Int(process.terminationStatus), userInfo: [
             NSLocalizedDescriptionKey: message.trimmingCharacters(in: .whitespacesAndNewlines)
         ])
     }

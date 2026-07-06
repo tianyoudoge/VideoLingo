@@ -1,8 +1,8 @@
-# VideoLingo
+# CaptionFlow
 
 [简体中文](./README.zh-CN.md)
 
-VideoLingo is a macOS desktop app for turning videos into bilingual subtitle files. It extracts audio locally, detects speech segments, transcribes subtitles with whisper.cpp, and translates them with an OpenAI-compatible LLM provider.
+CaptionFlow is a macOS desktop app for turning videos into bilingual subtitle files. It extracts audio locally, detects speech segments, transcribes subtitles with whisper.cpp, and translates them with an OpenAI-compatible LLM provider.
 
 The app is designed for lightweight distribution: model weights and FFmpeg are downloaded after installation instead of being bundled in the app archive.
 
@@ -30,10 +30,10 @@ video
 
 ## Runtime Assets
 
-VideoLingo stores downloaded runtime assets under:
+CaptionFlow stores downloaded runtime assets under:
 
 ```text
-~/Library/Application Support/VideoLingo/
+~/Library/Application Support/CaptionFlow/
   models/
   tools/
 ```
@@ -56,7 +56,7 @@ Build locally:
 ./scripts/install_deps_macos.sh
 ./scripts/build_backend.sh
 ./scripts/build_app_bundle.sh
-open ./VideoLingo.app
+open ./CaptionFlow.app
 ```
 
 ## Release Build
@@ -70,7 +70,7 @@ Create a local macOS release archive:
 Output:
 
 ```text
-dist/VideoLingo-macOS-arm64.zip
+dist/CaptionFlow-macOS-arm64.zip
 ```
 
 ## GitHub Releases
@@ -82,12 +82,12 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow uploads `VideoLingo-macOS-arm64.zip` to the GitHub Release for that tag.
+The workflow uploads `CaptionFlow-macOS-arm64.zip` to the GitHub Release for that tag.
 
 ## Backend CLI
 
 ```bash
-./bin/videolingo-backend transcribe \
+./bin/captionflow-backend transcribe \
   --input /path/to/video.mp4 \
   --output-dir /path/to/out \
   --api-key sk-xxx \
@@ -96,7 +96,7 @@ The workflow uploads `VideoLingo-macOS-arm64.zip` to the GitHub Release for that
   --llm-model deepseek-v4-flash \
   --language auto \
   --target-language zh-Hans \
-  --model ~/Library/Application\ Support/VideoLingo/models/ggml-small-q5_1.bin \
+  --model ~/Library/Application\ Support/CaptionFlow/models/ggml-small-q5_1.bin \
   --whisper-bin ./bin/whisper-cli \
   --ffmpeg /opt/homebrew/bin/ffmpeg \
   --ffprobe /opt/homebrew/bin/ffprobe
@@ -104,7 +104,7 @@ The workflow uploads `VideoLingo-macOS-arm64.zip` to the GitHub Release for that
 
 ## License
 
-VideoLingo is released under the MIT License. See [LICENSE](./LICENSE).
+CaptionFlow is released under the MIT License. See [LICENSE](./LICENSE).
 
 Copyright (c) 2026 dogggyu.
 

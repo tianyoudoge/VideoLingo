@@ -3,11 +3,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "VideoLingoApp",
+    name: "CaptionFlowApp",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "VideoLingoApp"
+            name: "CaptionFlowApp"
         )
     ]
 )
