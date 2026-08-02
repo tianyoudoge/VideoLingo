@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,11 +12,13 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 )
@@ -29,20 +30,22 @@ type Config struct {
 	FFprobe               string
 	WhisperBin            string
 	ModelPath             string
+	VADModelPath          string
 	Language              string
 	TargetLanguage        string
 	Provider              string
 	APIKey                string
 	BaseURL               string
 	Model                 string
-	VADNoise              string
-	VADSilence            float64
-	VADPadding            float64
-	MinSegment            float64
-	MaxSegment            float64
-	MaxPackGap            float64
+	VADThreshold          float64
+	VADMinSpeechMS        int
+	VADMinSilenceMS       int
+	VADMaxSpeech          float64
+	VADSpeechPadMS        int
+	VADOverlap            float64
 	BatchSize             int
 	MaxLineChars          int
+	TranslationAttempts   int
 	KeepTemp              bool
 	TotalPromptTokens     int
 	TotalCachedPrompt     int
@@ -50,16 +53,18 @@ type Config struct {
 	TotalTokens           int
 }
 
-type Segment struct {
-	Start float64
-	End   float64
-}
-
 type Cue struct {
 	Index int
 	Start float64
 	End   float64
 	Text  string
+}
+
+type RepeatedRange struct {
+	Start float64
+	End   float64
+	Text  string
+	Count int
 }
 
 type Event struct {
@@ -87,7 +92,7 @@ type Event struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fatalf("usage: captionflow-backend transcribe --input video.mp4 --api-key $DEEPSEEK_API_KEY --model models/ggml-small-q5_1.bin")
+		fatalf("usage: captionflow-backend transcribe --input video.mp4 --api-key $DEEPSEEK_API_KEY --model models/ggml-large-v3-q5_0.bin --vad-model models/ggml-silero-v6.2.0.bin")
 	}
 
 	switch os.Args[1] {
@@ -96,7 +101,9 @@ func main() {
 		if err != nil {
 			fatalf("%v", err)
 		}
-		if err := runTranscribe(context.Background(), cfg); err != nil {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := runTranscribe(ctx, cfg); err != nil {
 			fatalf("%v", err)
 		}
 	default:
@@ -109,24 +116,26 @@ func parseTranscribe(args []string) (Config, error) {
 	fs.SetOutput(io.Discard)
 
 	cfg := Config{
-		FFmpeg:         "ffmpeg",
-		FFprobe:        "ffprobe",
-		WhisperBin:     "whisper-cli",
-		ModelPath:      "models/ggml-medium.bin",
-		Language:       "auto",
-		TargetLanguage: "zh-Hans",
-		Provider:       "deepseek",
-		APIKey:         os.Getenv("DEEPSEEK_API_KEY"),
-		BaseURL:        "https://api.deepseek.com/chat/completions",
-		Model:          "deepseek-v4-flash",
-		VADNoise:       "-35dB",
-		VADSilence:     0.80,
-		VADPadding:     0.30,
-		MinSegment:     2.00,
-		MaxSegment:     240,
-		MaxPackGap:     8,
-		BatchSize:      50,
-		MaxLineChars:   18,
+		FFmpeg:              "ffmpeg",
+		FFprobe:             "ffprobe",
+		WhisperBin:          "whisper-cli",
+		ModelPath:           "models/ggml-large-v3-q5_0.bin",
+		VADModelPath:        "models/ggml-silero-v6.2.0.bin",
+		Language:            "ja",
+		TargetLanguage:      "zh-Hans",
+		Provider:            "deepseek",
+		APIKey:              os.Getenv("DEEPSEEK_API_KEY"),
+		BaseURL:             "https://api.deepseek.com/chat/completions",
+		Model:               "deepseek-v4-flash",
+		VADThreshold:        0.45,
+		VADMinSpeechMS:      120,
+		VADMinSilenceMS:     500,
+		VADMaxSpeech:        30,
+		VADSpeechPadMS:      350,
+		VADOverlap:          0.80,
+		BatchSize:           50,
+		MaxLineChars:        18,
+		TranslationAttempts: 5,
 	}
 
 	fs.StringVar(&cfg.Input, "input", cfg.Input, "input video path")
@@ -135,6 +144,7 @@ func parseTranscribe(args []string) (Config, error) {
 	fs.StringVar(&cfg.FFprobe, "ffprobe", cfg.FFprobe, "ffprobe executable")
 	fs.StringVar(&cfg.WhisperBin, "whisper-bin", cfg.WhisperBin, "whisper.cpp whisper-cli executable")
 	fs.StringVar(&cfg.ModelPath, "model", cfg.ModelPath, "whisper.cpp ggml model path")
+	fs.StringVar(&cfg.VADModelPath, "vad-model", cfg.VADModelPath, "whisper.cpp Silero VAD model path")
 	fs.StringVar(&cfg.Language, "language", cfg.Language, "source language")
 	fs.StringVar(&cfg.TargetLanguage, "target-language", cfg.TargetLanguage, "target subtitle language")
 	fs.StringVar(&cfg.Provider, "provider", cfg.Provider, "translation provider name")
@@ -143,14 +153,15 @@ func parseTranscribe(args []string) (Config, error) {
 	fs.StringVar(&cfg.Model, "llm-model", cfg.Model, "translation model")
 	fs.StringVar(&cfg.BaseURL, "deepseek-url", cfg.BaseURL, "deprecated alias for --base-url")
 	fs.StringVar(&cfg.Model, "deepseek-model", cfg.Model, "deprecated alias for --llm-model")
-	fs.StringVar(&cfg.VADNoise, "vad-noise", cfg.VADNoise, "ffmpeg silencedetect noise threshold")
-	fs.Float64Var(&cfg.VADSilence, "vad-silence", cfg.VADSilence, "minimum silence duration")
-	fs.Float64Var(&cfg.VADPadding, "vad-padding", cfg.VADPadding, "seconds of padding around VAD segments")
-	fs.Float64Var(&cfg.MinSegment, "min-segment", cfg.MinSegment, "minimum speech segment seconds")
-	fs.Float64Var(&cfg.MaxSegment, "max-segment", cfg.MaxSegment, "maximum segment seconds before splitting")
-	fs.Float64Var(&cfg.MaxPackGap, "max-pack-gap", cfg.MaxPackGap, "maximum silence gap seconds allowed when packing speech segments")
+	fs.Float64Var(&cfg.VADThreshold, "vad-threshold", cfg.VADThreshold, "Silero speech probability threshold")
+	fs.IntVar(&cfg.VADMinSpeechMS, "vad-min-speech-ms", cfg.VADMinSpeechMS, "minimum speech duration in milliseconds")
+	fs.IntVar(&cfg.VADMinSilenceMS, "vad-min-silence-ms", cfg.VADMinSilenceMS, "minimum silence duration in milliseconds")
+	fs.Float64Var(&cfg.VADMaxSpeech, "vad-max-speech", cfg.VADMaxSpeech, "maximum VAD speech chunk seconds")
+	fs.IntVar(&cfg.VADSpeechPadMS, "vad-speech-pad-ms", cfg.VADSpeechPadMS, "speech padding in milliseconds")
+	fs.Float64Var(&cfg.VADOverlap, "vad-overlap", cfg.VADOverlap, "overlap between VAD chunks in seconds")
 	fs.IntVar(&cfg.BatchSize, "batch-size", cfg.BatchSize, "translation cue batch size")
 	fs.IntVar(&cfg.MaxLineChars, "max-line-chars", cfg.MaxLineChars, "Chinese subtitle wrap length")
+	fs.IntVar(&cfg.TranslationAttempts, "translation-attempts", cfg.TranslationAttempts, "maximum retries for missing subtitle translations")
 	fs.BoolVar(&cfg.KeepTemp, "keep-temp", cfg.KeepTemp, "keep temp files")
 
 	if err := fs.Parse(args); err != nil {
@@ -174,6 +185,9 @@ func runTranscribe(ctx context.Context, cfg Config) error {
 		return err
 	}
 	if err := requireFile(cfg.ModelPath, "whisper model"); err != nil {
+		return err
+	}
+	if err := requireFile(cfg.VADModelPath, "Silero VAD model"); err != nil {
 		return err
 	}
 	if _, err := exec.LookPath(cfg.FFmpeg); err != nil && !filepath.IsAbs(cfg.FFmpeg) {
@@ -200,29 +214,26 @@ func runTranscribe(ctx context.Context, cfg Config) error {
 	if !cfg.KeepTemp {
 		defer os.RemoveAll(tmp)
 	}
-
-	emit("progress", "extract", "extracting 16 kHz mono audio", 0.03, "")
-	audio := filepath.Join(tmp, "audio.wav")
-	if err := runCmd(ctx, cfg.FFmpeg, "-y", "-i", cfg.Input, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio); err != nil {
+	inputPath, err := stageSMBInput(ctx, cfg.Input, tmp)
+	if err != nil {
 		return err
 	}
 
-	emit("progress", "vad", "detecting speech segments", 0.10, "")
+	emit("progress", "extract", "extracting 16 kHz mono audio", 0.03, "")
+	audio := filepath.Join(tmp, "audio.wav")
+	if err := runCmd(ctx, cfg.FFmpeg, "-y", "-i", inputPath, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio); err != nil {
+		return err
+	}
+
+	emit("progress", "vad", "使用 Silero VAD 检测语音并保留短句", 0.10, "")
 	duration, err := probeDuration(ctx, cfg, audio)
 	if err != nil {
 		return err
 	}
 	emitProgress("progress", "extract", fmt.Sprintf("已提取 %.1f 分钟音频", duration/60), 0.08, "", duration, 0, 0)
-	segments, err := detectSegments(ctx, cfg, audio, duration)
-	if err != nil {
-		return err
-	}
-	if len(segments) == 0 {
-		segments = []Segment{{Start: 0, End: duration}}
-	}
-	emitProgress("progress", "vad", fmt.Sprintf("切成 %d 个识别块", len(segments)), 0.16, "", duration, len(segments), 0)
+	emitProgress("progress", "vad", "Silero VAD 最长语音块 30 秒，重叠 0.8 秒", 0.16, "", duration, 0, 0)
 
-	cues, err := transcribeSegments(ctx, cfg, tmp, audio, segments)
+	cues, err := transcribeWithSilero(ctx, cfg, tmp, audio, "primary", 0, false)
 	if err != nil {
 		return err
 	}
@@ -231,6 +242,11 @@ func runTranscribe(ctx context.Context, cfg Config) error {
 	}
 	normalizeCues(cues)
 	cues = filterCues(cues)
+	cues, err = repairRepeatedRanges(ctx, cfg, tmp, audio, duration, cues)
+	if err != nil {
+		return err
+	}
+	normalizeCues(cues)
 	if len(cues) == 0 {
 		return errors.New("all subtitle cues were filtered as non-speech")
 	}
@@ -255,146 +271,246 @@ func runTranscribe(ctx context.Context, cfg Config) error {
 	return nil
 }
 
-func transcribeSegments(ctx context.Context, cfg Config, tmp string, audio string, segments []Segment) ([]Cue, error) {
-	var all []Cue
-	for i, seg := range segments {
-		percent := 0.18 + 0.52*(float64(i)/math.Max(1, float64(len(segments))))
-		emitProgress("progress", "whisper", fmt.Sprintf("正在识别第 %d/%d 块，%.1f-%.1f 分钟", i+1, len(segments), seg.Start/60, seg.End/60), percent, "", seg.End, len(segments), i+1)
+func stageSMBInput(ctx context.Context, inputPath, tmp string) (string, error) {
+	if !isSMBFileSystem(inputPath) {
+		return inputPath, nil
+	}
 
-		segPath := filepath.Join(tmp, fmt.Sprintf("segment_%04d.wav", i+1))
-		if err := runCmd(ctx, cfg.FFmpeg, "-y", "-ss", fmt.Sprintf("%.3f", seg.Start), "-to", fmt.Sprintf("%.3f", seg.End), "-i", audio, "-c", "copy", segPath); err != nil {
-			return nil, err
-		}
+	info, err := os.Stat(inputPath)
+	if err != nil {
+		return "", fmt.Errorf("inspect SMB input: %w", err)
+	}
+	if info.Size() <= 0 {
+		return "", errors.New("SMB input video is empty")
+	}
+	if available, err := availableBytes(tmp); err == nil && uint64(info.Size()) > available {
+		return "", fmt.Errorf("not enough local temporary disk space to stage SMB video: need %s, available %s", byteSize(info.Size()), byteSize(int64(available)))
+	}
 
-		outBase := filepath.Join(tmp, fmt.Sprintf("segment_%04d", i+1))
-		whisperArgs := []string{
-			"-m", cfg.ModelPath,
-			"-f", segPath,
-			"-l", cfg.Language,
-			"-osrt",
-			"-of", outBase,
-			"--no-prints",
-			"--suppress-nst",
-			"--no-speech-thold", "0.35",
-			"--logprob-thold", "-0.60",
-			"--entropy-thold", "2.20",
-		}
-		err := runCmd(ctx, cfg.WhisperBin, whisperArgs...)
-		if err != nil {
-			// Older whisper.cpp builds may not support --no-prints.
-			err = runCmd(ctx, cfg.WhisperBin, "-m", cfg.ModelPath, "-f", segPath, "-l", cfg.Language, "-osrt", "-of", outBase)
-		}
-		if err != nil {
-			return nil, err
-		}
+	emitProgress("progress", "copy", fmt.Sprintf("正在从 SMB 复制视频到本机临时目录（%s）", byteSize(info.Size())), 0.01, "", 0, 0, 0)
+	source, err := os.Open(inputPath)
+	if err != nil {
+		return "", fmt.Errorf("open SMB input: %w", err)
+	}
+	defer source.Close()
 
-		part, err := parseSRT(outBase + ".srt")
-		if err != nil {
-			return nil, err
+	stagedPath := filepath.Join(tmp, "source"+filepath.Ext(inputPath))
+	target, err := os.OpenFile(stagedPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("create local staged video: %w", err)
+	}
+	defer target.Close()
+
+	buffer := make([]byte, 4*1024*1024)
+	var copied int64
+	lastUpdate := time.Now()
+	for {
+		if err := ctx.Err(); err != nil {
+			return "", err
 		}
-		for _, cue := range part {
-			cue.Start += seg.Start
-			cue.End += seg.Start
-			if strings.TrimSpace(cue.Text) != "" {
-				all = append(all, cue)
+		read, readErr := source.Read(buffer)
+		if read > 0 {
+			written, writeErr := target.Write(buffer[:read])
+			copied += int64(written)
+			if writeErr != nil {
+				return "", fmt.Errorf("write local staged video: %w", writeErr)
 			}
+			if written != read {
+				return "", io.ErrShortWrite
+			}
+		}
+		if time.Since(lastUpdate) >= 2*time.Second {
+			percent := 0.01 + 0.02*float64(copied)/float64(info.Size())
+			emitProgress("progress", "copy", fmt.Sprintf("正在复制 SMB 视频：%s / %s", byteSize(copied), byteSize(info.Size())), percent, "", 0, 0, 0)
+			lastUpdate = time.Now()
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return "", fmt.Errorf("read SMB input: %w", readErr)
 		}
 	}
-	sort.SliceStable(all, func(i, j int) bool { return all[i].Start < all[j].Start })
-	return all, nil
+	if err := target.Sync(); err != nil {
+		return "", fmt.Errorf("sync local staged video: %w", err)
+	}
+	if copied != info.Size() {
+		return "", fmt.Errorf("SMB video copy incomplete: copied %s of %s", byteSize(copied), byteSize(info.Size()))
+	}
+	emitProgress("progress", "copy", "SMB 视频已完整复制到本机，开始提取音频", 0.03, "", 0, 0, 0)
+	return stagedPath, nil
 }
 
-func detectSegments(ctx context.Context, cfg Config, audio string, duration float64) ([]Segment, error) {
-	cmd := exec.CommandContext(ctx, cfg.FFmpeg, "-hide_banner", "-nostats", "-i", audio, "-af", fmt.Sprintf("silencedetect=noise=%s:d=%.2f", cfg.VADNoise, cfg.VADSilence), "-f", "null", "-")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	cmd.Stdout = io.Discard
-	_ = cmd.Run()
+func isSMBFileSystem(path string) bool {
+	var fs syscall.Statfs_t
+	if err := syscall.Statfs(path, &fs); err != nil {
+		return false
+	}
+	name := make([]byte, 0, len(fs.Fstypename))
+	for _, char := range fs.Fstypename {
+		if char == 0 {
+			break
+		}
+		name = append(name, byte(char))
+	}
+	return string(name) == "smbfs"
+}
 
-	reStart := regexp.MustCompile(`silence_start:\s*([0-9.]+)`)
-	reEnd := regexp.MustCompile(`silence_end:\s*([0-9.]+)`)
-	scanner := bufio.NewScanner(strings.NewReader(stderr.String()))
+func availableBytes(path string) (uint64, error) {
+	var fs syscall.Statfs_t
+	if err := syscall.Statfs(path, &fs); err != nil {
+		return 0, err
+	}
+	return fs.Bavail * uint64(fs.Bsize), nil
+}
 
-	var segments []Segment
-	speechStart := 0.0
-	inSilence := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if m := reStart.FindStringSubmatch(line); len(m) == 2 {
-			silenceStart, _ := strconv.ParseFloat(m[1], 64)
-			if silenceStart-speechStart >= cfg.MinSegment {
-				segments = append(segments, Segment{
-					Start: math.Max(0, speechStart-cfg.VADPadding),
-					End:   math.Min(duration, silenceStart+cfg.VADPadding),
-				})
-			}
-			inSilence = true
+func byteSize(value int64) string {
+	const unit = 1024
+	if value < unit {
+		return fmt.Sprintf("%d B", value)
+	}
+	div, exp := int64(unit), 0
+	for n := value / unit; n >= unit && exp < 5; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(value)/float64(div), "KMGTPE"[exp])
+}
+
+func transcribeWithSilero(ctx context.Context, cfg Config, tmp string, audio string, name string, offset float64, noContext bool) ([]Cue, error) {
+	outBase := filepath.Join(tmp, name)
+	language := strings.TrimSpace(cfg.Language)
+	if language == "" || strings.EqualFold(language, "auto") {
+		language = "ja"
+	}
+	args := []string{
+		"-m", cfg.ModelPath,
+		"-f", audio,
+		"-l", language,
+		"-osrt",
+		"-of", outBase,
+		"--no-prints",
+		"--vad",
+		"--vad-model", cfg.VADModelPath,
+		"--vad-threshold", fmt.Sprintf("%.2f", cfg.VADThreshold),
+		"--vad-min-speech-duration-ms", strconv.Itoa(cfg.VADMinSpeechMS),
+		"--vad-min-silence-duration-ms", strconv.Itoa(cfg.VADMinSilenceMS),
+		"--vad-max-speech-duration-s", fmt.Sprintf("%.1f", cfg.VADMaxSpeech),
+		"--vad-speech-pad-ms", strconv.Itoa(cfg.VADSpeechPadMS),
+		"--vad-samples-overlap", fmt.Sprintf("%.2f", cfg.VADOverlap),
+	}
+	if noContext {
+		args = append(args, "--max-context", "0")
+	}
+	if err := runCmd(ctx, cfg.WhisperBin, args...); err != nil {
+		return nil, err
+	}
+	part, err := parseSRT(outBase + ".srt")
+	if err != nil {
+		if noContext && os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	for i := range part {
+		part[i].Start += offset
+		part[i].End += offset
+	}
+	return part, nil
+}
+
+func repairRepeatedRanges(ctx context.Context, cfg Config, tmp string, audio string, duration float64, cues []Cue) ([]Cue, error) {
+	ranges := detectRepeatedRanges(cues, 3)
+	if len(ranges) == 0 {
+		return cues, nil
+	}
+	emit("progress", "whisper", fmt.Sprintf("检测到 %d 个重复幻觉区间，开始局部重跑", len(ranges)), 0.66, "")
+	out := cues
+	for i, suspect := range ranges {
+		clipStart := math.Max(0, suspect.Start-1.5)
+		clipEnd := math.Min(duration, suspect.End+1.5)
+		clipPath := filepath.Join(tmp, fmt.Sprintf("repair_%04d.wav", i+1))
+		if err := runCmd(ctx, cfg.FFmpeg, "-y", "-ss", fmt.Sprintf("%.3f", clipStart), "-t", fmt.Sprintf("%.3f", clipEnd-clipStart), "-i", audio, "-c:a", "pcm_s16le", clipPath); err != nil {
+			return nil, err
+		}
+		candidate, err := transcribeWithSilero(ctx, cfg, tmp, clipPath, fmt.Sprintf("repair_%04d", i+1), clipStart, true)
+		if err != nil {
+			return nil, err
+		}
+		candidate = cuesWithin(candidate, suspect.Start, suspect.End)
+		if longestRepeatedRun(candidate) >= suspect.Count {
+			emit("progress", "whisper", fmt.Sprintf("异常区间 %.1f-%.1f 秒重跑后未改善，保留原结果", suspect.Start, suspect.End), 0, "")
 			continue
 		}
-		if m := reEnd.FindStringSubmatch(line); len(m) == 2 {
-			silenceEnd, _ := strconv.ParseFloat(m[1], 64)
-			speechStart = silenceEnd
-			inSilence = false
-		}
+		out = replaceCueRange(out, candidate, suspect.Start, suspect.End)
+		emit("progress", "whisper", fmt.Sprintf("已修复重复区间 %.1f-%.1f 秒（连续 %d 条）", suspect.Start, suspect.End, suspect.Count), 0, "")
 	}
-	if !inSilence && duration-speechStart >= cfg.MinSegment {
-		segments = append(segments, Segment{Start: math.Max(0, speechStart-cfg.VADPadding), End: duration})
-	}
-	segments = mergeCloseSegments(segments, 1.50)
-	segments = packSegments(segments, cfg.MaxSegment, cfg.MaxPackGap)
-	return splitLongSegments(segments, cfg.MaxSegment), nil
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Start < out[j].Start })
+	return out, nil
 }
 
-func mergeCloseSegments(in []Segment, gap float64) []Segment {
-	if len(in) == 0 {
-		return in
+func detectRepeatedRanges(cues []Cue, minimum int) []RepeatedRange {
+	var out []RepeatedRange
+	for start := 0; start < len(cues); {
+		key := comparableCueText(cues[start].Text)
+		end := start + 1
+		for end < len(cues) && key != "" && comparableCueText(cues[end].Text) == key && cues[end].Start-cues[end-1].End <= 3 {
+			end++
+		}
+		if key != "" && end-start >= minimum {
+			out = append(out, RepeatedRange{Start: cues[start].Start, End: cues[end-1].End, Text: cues[start].Text, Count: end - start})
+		}
+		start = end
 	}
-	out := []Segment{in[0]}
-	for _, seg := range in[1:] {
-		last := &out[len(out)-1]
-		if seg.Start-last.End <= gap {
-			last.End = math.Max(last.End, seg.End)
-		} else {
-			out = append(out, seg)
+	return out
+}
+
+func comparableCueText(text string) string {
+	text = strings.ToLower(strings.Join(strings.Fields(text), ""))
+	return strings.Trim(text, "、。，．,.!?！？…・~〜ー-—()（）[]【】『』「」 ")
+}
+
+func longestRepeatedRun(cues []Cue) int {
+	longest := 0
+	for start := 0; start < len(cues); {
+		key := comparableCueText(cues[start].Text)
+		end := start + 1
+		for end < len(cues) && key != "" && comparableCueText(cues[end].Text) == key && cues[end].Start-cues[end-1].End <= 3 {
+			end++
+		}
+		longest = max(longest, end-start)
+		start = end
+	}
+	return longest
+}
+
+func cuesWithin(cues []Cue, start float64, end float64) []Cue {
+	out := make([]Cue, 0, len(cues))
+	for _, cue := range cues {
+		midpoint := (cue.Start + cue.End) / 2
+		if midpoint >= start && midpoint <= end {
+			out = append(out, cue)
 		}
 	}
 	return out
 }
 
-func splitLongSegments(in []Segment, maxLen float64) []Segment {
-	if maxLen <= 0 {
-		return in
-	}
-	var out []Segment
-	for _, seg := range in {
-		if seg.End-seg.Start <= maxLen {
-			out = append(out, seg)
+func replaceCueRange(cues []Cue, replacement []Cue, start float64, end float64) []Cue {
+	out := make([]Cue, 0, len(cues)+len(replacement))
+	inserted := false
+	for _, cue := range cues {
+		if cue.End > start && cue.Start < end {
+			if !inserted {
+				out = append(out, replacement...)
+				inserted = true
+			}
 			continue
 		}
-		for start := seg.Start; start < seg.End; start += maxLen {
-			out = append(out, Segment{Start: start, End: math.Min(seg.End, start+maxLen)})
-		}
+		out = append(out, cue)
 	}
-	return out
-}
-
-func packSegments(in []Segment, maxLen float64, maxGap float64) []Segment {
-	if len(in) == 0 || maxLen <= 0 {
-		return in
+	if !inserted {
+		out = append(out, replacement...)
 	}
-
-	out := make([]Segment, 0, len(in))
-	current := in[0]
-	for _, seg := range in[1:] {
-		gap := seg.Start - current.End
-		if gap <= maxGap && seg.End-current.Start <= maxLen {
-			current.End = math.Max(current.End, seg.End)
-			continue
-		}
-		out = append(out, current)
-		current = seg
-	}
-	out = append(out, current)
 	return out
 }
 
@@ -406,7 +522,10 @@ func translateCues(ctx context.Context, cfg *Config, cues []Cue) ([]Cue, error) 
 		percent := 0.76 + 0.20*(float64(start)/math.Max(1, float64(len(cues))))
 		emit("progress", "translate", fmt.Sprintf("正在翻译第 %d-%d/%d 句", start+1, end, len(cues)), percent, "")
 
-		translations := translateBatchWithRetry(ctx, cfg, cues[start:end], 3)
+		translations, err := translateBatchWithRetry(ctx, cfg, cues[start:end], cfg.TranslationAttempts)
+		if err != nil {
+			return nil, err
+		}
 		for i, text := range translations {
 			if strings.TrimSpace(text) != "" {
 				out[start+i].Text = strings.TrimSpace(text)
@@ -418,55 +537,83 @@ func translateCues(ctx context.Context, cfg *Config, cues []Cue) ([]Cue, error) 
 	return out, nil
 }
 
-func translateBatchWithRetry(ctx context.Context, cfg *Config, cues []Cue, attempts int) []string {
+func translateBatchWithRetry(ctx context.Context, cfg *Config, cues []Cue, attempts int) ([]string, error) {
+	if attempts < 1 {
+		attempts = 1
+	}
+	translations := make([]string, len(cues))
+	pending := make([]int, len(cues))
+	for i := range cues {
+		pending[i] = i
+	}
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
-		translations, err := translateBatch(ctx, cfg, cues)
-		if err == nil && hasAnyTranslation(translations) {
-			return fillMissingTranslations(translations, cues)
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		if err != nil {
+		batch := make([]Cue, len(pending))
+		for i, index := range pending {
+			batch[i] = cues[index]
+		}
+		partial, err := translateBatch(ctx, cfg, batch)
+		if err == nil {
+			nextPending := make([]int, 0, len(pending))
+			for i, index := range pending {
+				if i < len(partial) && isUsableTranslation(partial[i]) {
+					translations[index] = strings.TrimSpace(partial[i])
+				} else {
+					nextPending = append(nextPending, index)
+				}
+			}
+			pending = nextPending
+			if len(pending) == 0 {
+				return translations, nil
+			}
+			lastErr = fmt.Errorf("%d subtitle lines were missing or refused", len(pending))
+		} else {
 			lastErr = err
-		} else {
-			lastErr = errors.New("empty translation")
 		}
-		emit("progress", "translate", fmt.Sprintf("翻译失败，正在重试 %d/%d", attempt, attempts), 0, "")
-		time.Sleep(time.Duration(attempt) * 2 * time.Second)
+		if attempt == attempts {
+			break
+		}
+		emit("progress", "translate", fmt.Sprintf("有 %d 句未获得可用译文，正在重试 %d/%d", len(pending), attempt+1, attempts), 0, "")
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Duration(attempt) * time.Second):
+		}
 	}
-	emit("progress", "translate", fmt.Sprintf("翻译仍失败，已回退为源语言：%v", lastErr), 0, "")
-	fallback := make([]string, len(cues))
-	for i, cue := range cues {
-		fallback[i] = cue.Text
+	for _, index := range pending {
+		translations[index] = cues[index].Text
 	}
-	return fallback
+	emit("progress", "translate", fmt.Sprintf("仍有 %d 句未能翻译，已保留原日文：%v", len(pending), lastErr), 0, "")
+	return translations, nil
 }
 
-func hasAnyTranslation(translations []string) bool {
-	for _, text := range translations {
-		if strings.TrimSpace(text) != "" {
-			return true
+func isUsableTranslation(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return false
+	}
+	lower := strings.ToLower(text)
+	refusalMarkers := []string{
+		"i can't", "i cannot", "i'm sorry", "unable to", "cannot assist",
+		"抱歉", "无法", "不能协助", "不便", "申し訳", "できません",
+	}
+	for _, marker := range refusalMarkers {
+		if strings.Contains(lower, marker) {
+			return false
 		}
 	}
-	return false
-}
-
-func fillMissingTranslations(translations []string, cues []Cue) []string {
-	out := make([]string, len(cues))
-	for i := range cues {
-		if i < len(translations) && strings.TrimSpace(translations[i]) != "" {
-			out[i] = strings.TrimSpace(translations[i])
-		} else {
-			out[i] = cues[i].Text
-		}
-	}
-	return out
+	return true
 }
 
 func translateBatch(ctx context.Context, cfg *Config, cues []Cue) ([]string, error) {
 	var b strings.Builder
 	targetName := targetLanguageName(cfg.TargetLanguage)
 	b.WriteString("Translate these source-language subtitles into " + targetName + ".\n")
-	b.WriteString("Rules: keep the exact numbering, one subtitle per line, no timestamps, no notes, concise natural wording suitable for SRT subtitles.\n")
+	b.WriteString("Rules: keep the exact numbering, translate every supplied line, one subtitle per line, no timestamps, no notes, concise natural wording suitable for SRT subtitles.\n")
+	b.WriteString("This is a literal transformation task. Do not add, embellish, summarize, judge, or omit dialogue; preserve the meaning of the supplied text only.\n")
 	b.WriteString("If the source and target languages are the same, polish the subtitles lightly without changing meaning.\n\n")
 	for i, cue := range cues {
 		fmt.Fprintf(&b, "%d. %s\n", i+1, cleanOneLine(cue.Text))

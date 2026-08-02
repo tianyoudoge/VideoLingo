@@ -2,16 +2,18 @@
 
 [简体中文](./README.zh-CN.md)
 
-CaptionFlow is a macOS desktop app for turning videos into bilingual subtitle files. It extracts audio locally, detects speech segments, transcribes subtitles with whisper.cpp, and translates them with an OpenAI-compatible LLM provider.
+CaptionFlow is a macOS desktop app for turning videos into bilingual subtitle files. It extracts audio locally, segments speech with Silero VAD, transcribes subtitles with whisper.cpp, repairs repeated hallucination ranges, and translates them with an OpenAI-compatible LLM provider.
 
 The app is designed for lightweight distribution: model weights and FFmpeg are downloaded after installation instead of being bundled in the app archive.
 
 ## Features
 
 - Drag-and-drop video import.
+- Built-in SMB2/SMB3 video browser with Bonjour discovery, bulk directory listing, server modification-time sorting, local search, Keychain-only password storage, and on-demand mounting for FFmpeg.
 - Source language auto-detection or manual selection.
 - Target subtitle language selection: English, Japanese, Simplified Chinese, Traditional Chinese, French, and Spanish.
 - Local whisper.cpp transcription runtime.
+- Custom Whisper/Silero weight directory with migration support for external drives.
 - Configurable OpenAI-compatible LLM providers: DeepSeek, Doubao, Bailian/Qwen, Kimi, Zhipu, MiniMax, and custom endpoints.
 - Per-provider API key storage.
 - Per-model token accounting, including prompt, cached prompt, uncached prompt, completion, and total tokens.
@@ -22,8 +24,9 @@ The app is designed for lightweight distribution: model weights and FFmpeg are d
 ```text
 video
   -> FFmpeg audio extraction
-  -> VAD speech segmentation
-  -> whisper.cpp transcription
+  -> Silero VAD speech segmentation (120 ms minimum speech, 30 s maximum, 0.8 s overlap)
+  -> whisper.cpp large-v3 Q5 transcription
+  -> repeated-hallucination detection and local retry
   -> OpenAI-compatible LLM translation
   -> .source.srt and target-language .srt
 ```
@@ -35,10 +38,14 @@ CaptionFlow stores downloaded runtime assets under:
 ```text
 ~/Library/Application Support/CaptionFlow/
   models/
+    ggml-large-v3-q5_0.bin
+    ggml-silero-v6.2.0.bin
   tools/
 ```
 
 The app bundle does not include Whisper model weights.
+
+Choose a custom location under **Model Management → Whisper Weight Storage**. If an external drive is unavailable, CaptionFlow stops downloads and transcription until the drive is reconnected or a new folder is selected. FFmpeg and app runtime tools remain in the default Application Support directory.
 
 ## Local Development
 
@@ -94,9 +101,10 @@ The workflow uploads `CaptionFlow-macOS-arm64.zip` to the GitHub Release for tha
   --provider DeepSeek \
   --base-url https://api.deepseek.com/chat/completions \
   --llm-model deepseek-v4-flash \
-  --language auto \
+  --language ja \
   --target-language zh-Hans \
-  --model ~/Library/Application\ Support/CaptionFlow/models/ggml-small-q5_1.bin \
+  --model ~/Library/Application\ Support/CaptionFlow/models/ggml-large-v3-q5_0.bin \
+  --vad-model ~/Library/Application\ Support/CaptionFlow/models/ggml-silero-v6.2.0.bin \
   --whisper-bin ./bin/whisper-cli \
   --ffmpeg /opt/homebrew/bin/ffmpeg \
   --ffprobe /opt/homebrew/bin/ffprobe

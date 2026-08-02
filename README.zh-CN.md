@@ -2,16 +2,18 @@
 
 [English](./README.md)
 
-CaptionFlow 是一个 macOS 桌面 App，用于把视频识别成字幕，并翻译成目标语言外挂字幕。它本地提取音频、做 VAD 语音分段、用 whisper.cpp 识别字幕，再通过 OpenAI-compatible 大模型接口翻译。
+CaptionFlow 是一个 macOS 桌面 App，用于把视频识别成字幕，并翻译成目标语言外挂字幕。它本地提取音频、用 Silero VAD 做语音分段、用 whisper.cpp 识别字幕并修复重复幻觉，再通过 OpenAI-compatible 大模型接口翻译。
 
 为了方便开源分发，App 包不会内置模型权重和 FFmpeg。用户安装后再按需下载运行组件。
 
 ## 特性
 
 - 支持拖入视频。
+- 内置快速 SMB2/SMB3 视频浏览器：通过 Bonjour 自动发现局域网设备，批量读取目录、按服务器修改时间排序和本地搜索；选中文件后自动挂载给 FFmpeg，密码只保存到 macOS 钥匙串。
 - 源语言支持自动识别，也可以手动选择。
 - 目标字幕语言支持 English、Japanese、简体中文、繁体中文、French、Spanish。
 - 本地 whisper.cpp 识别运行时。
+- 可在“模型管理”中把 Whisper 与 Silero 权重保存到外置磁盘，并迁移已有权重。
 - 可配置 OpenAI-compatible 大模型供应商：DeepSeek、豆包、百炼/Qwen、Kimi、智谱、MiniMax 和自定义接口。
 - 每个供应商独立保存 API Key。
 - 按模型累计 token 消耗，包括输入、缓存命中输入、非缓存输入、输出和总 token。
@@ -22,8 +24,9 @@ CaptionFlow 是一个 macOS 桌面 App，用于把视频识别成字幕，并翻
 ```text
 视频
   -> FFmpeg 提取音频
-  -> VAD 语音分段
-  -> whisper.cpp 识别字幕
+  -> Silero VAD 语音分段（保留 120ms 短句，最长 30 秒，0.8 秒重叠）
+  -> whisper.cpp large-v3 Q5 识别字幕
+  -> 重复幻觉检测与异常区间局部重跑
   -> OpenAI-compatible 大模型翻译
   -> .source.srt 和目标语言 .srt
 ```
@@ -35,10 +38,14 @@ CaptionFlow 会把下载的运行组件放在：
 ```text
 ~/Library/Application Support/CaptionFlow/
   models/
+    ggml-large-v3-q5_0.bin
+    ggml-silero-v6.2.0.bin
   tools/
 ```
 
 App 包不包含 Whisper 模型权重。
+
+可以在“模型管理 → Whisper 权重存储”中选择自定义目录。外置磁盘未挂载时，App 会停止下载和识别并提示重新连接，避免在本机误建同名 `/Volumes` 路径。FFmpeg 与 App 运行组件仍保存在默认的 Application Support 目录。
 
 ## 本地开发
 
@@ -94,9 +101,10 @@ git push origin v0.1.0
   --provider DeepSeek \
   --base-url https://api.deepseek.com/chat/completions \
   --llm-model deepseek-v4-flash \
-  --language auto \
+  --language ja \
   --target-language zh-Hans \
-  --model ~/Library/Application\ Support/CaptionFlow/models/ggml-small-q5_1.bin \
+  --model ~/Library/Application\ Support/CaptionFlow/models/ggml-large-v3-q5_0.bin \
+  --vad-model ~/Library/Application\ Support/CaptionFlow/models/ggml-silero-v6.2.0.bin \
   --whisper-bin ./bin/whisper-cli \
   --ffmpeg /opt/homebrew/bin/ffmpeg \
   --ffprobe /opt/homebrew/bin/ffprobe

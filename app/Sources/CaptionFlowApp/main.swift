@@ -220,6 +220,8 @@ func t(_ key: String, _ language: String) -> String {
         "modelName": ["en": "Model", "ja": "モデル", "zh-Hans": "模型", "zh-Hant": "模型", "fr": "Modèle", "es": "Modelo"],
         "customProviderHint": ["en": "Known providers use fixed endpoints and selectable models. Use Custom for your own endpoint and model name.", "ja": "既知のプロバイダーは固定エンドポイントと選択式モデルを使用します。独自のエンドポイントとモデル名は Custom を使ってください。", "zh-Hans": "已知厂商使用固定 endpoint 和模型选择。只有 Custom 支持自定义 endpoint 和模型名。", "zh-Hant": "已知廠商使用固定 endpoint 和模型選擇。只有 Custom 支援自訂 endpoint 和模型名稱。", "fr": "Les fournisseurs connus utilisent des endpoints fixes et des modèles sélectionnables. Utilisez Custom pour votre endpoint et modèle.", "es": "Los proveedores conocidos usan endpoints fijos y modelos seleccionables. Usa Custom para endpoint y modelo propios."],
         "chooseVideo": ["en": "Choose Video", "ja": "動画を選択", "zh-Hans": "选择视频", "zh-Hant": "選擇影片", "fr": "Choisir une vidéo", "es": "Elegir video"],
+        "localFile": ["en": "Local File", "ja": "ローカルファイル", "zh-Hans": "本地文件", "zh-Hant": "本機檔案", "fr": "Fichier local", "es": "Archivo local"],
+        "localNetworkSMB": ["en": "Local Network (SMB)", "ja": "ローカルネットワーク（SMB）", "zh-Hans": "局域网（SMB）", "zh-Hant": "區域網路（SMB）", "fr": "Réseau local (SMB)", "es": "Red local (SMB)"],
         "start": ["en": "Start", "ja": "開始", "zh-Hans": "开始生成", "zh-Hant": "開始產生", "fr": "Démarrer", "es": "Iniciar"],
         "stop": ["en": "Stop", "ja": "停止", "zh-Hans": "停止", "zh-Hant": "停止", "fr": "Arrêter", "es": "Detener"],
         "input": ["en": "Input", "ja": "入力", "zh-Hans": "输入", "zh-Hant": "輸入", "fr": "Entrée", "es": "Entrada"],
@@ -382,10 +384,19 @@ final class DependencyManager: ObservableObject {
     @Published var isInstalling = false
     @Published var status = "检查组件中"
     @Published var detail = ""
+    @Published private(set) var customModelsDirectory: URL?
 
-    private let modelURL = URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin")!
+    private let modelURL = URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-q5_0.bin")!
+    private let vadModelURL = URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin")!
     private let ffmpegURL = URL(string: "https://www.osxexperts.net/ffmpeg81arm.zip")!
     private let ffprobeURL = URL(string: "https://www.osxexperts.net/ffprobe81arm.zip")!
+    private let modelsDirectoryKey = "customModelsDirectory"
+
+    init() {
+        if let saved = UserDefaults.standard.string(forKey: modelsDirectoryKey), !saved.isEmpty {
+            customModelsDirectory = URL(fileURLWithPath: saved, isDirectory: true)
+        }
+    }
 
     var appSupportURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -401,22 +412,68 @@ final class DependencyManager: ObservableObject {
         appSupportURL.appendingPathComponent("tools", isDirectory: true)
     }
 
-    var modelsURL: URL {
+    var defaultModelsURL: URL {
         appSupportURL.appendingPathComponent("models", isDirectory: true)
     }
 
+    var modelsURL: URL {
+        customModelsDirectory ?? defaultModelsURL
+    }
+
+    var modelsDirectoryDisplay: String {
+        modelsURL.path
+    }
+
+    var usesCustomModelsDirectory: Bool {
+        customModelsDirectory != nil
+    }
+
+    var isModelsDirectoryAvailable: Bool {
+        guard let customModelsDirectory else { return true }
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: customModelsDirectory.path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
     var modelPath: String {
-        let installed = modelsURL.appendingPathComponent("ggml-small-q5_1.bin").path
+        if let configured = ProcessInfo.processInfo.environment["CAPTIONFLOW_WHISPER_MODEL"],
+           !configured.isEmpty,
+           FileManager.default.fileExists(atPath: configured) {
+            return configured
+        }
+        let installed = modelsURL.appendingPathComponent("ggml-large-v3-q5_0.bin").path
         if FileManager.default.fileExists(atPath: installed) {
             return installed
         }
-        let legacy = legacyAppSupportURL.appendingPathComponent("models/ggml-small-q5_1.bin").path
+        if usesCustomModelsDirectory { return installed }
+        let legacy = legacyAppSupportURL.appendingPathComponent("models/ggml-large-v3-q5_0.bin").path
         if FileManager.default.fileExists(atPath: legacy) {
             return legacy
         }
-        let devMedium = defaultProjectRoot() + "/models/ggml-medium.bin"
-        if FileManager.default.fileExists(atPath: devMedium) {
-            return devMedium
+        let development = defaultProjectRoot() + "/models/ggml-large-v3-q5_0.bin"
+        if FileManager.default.fileExists(atPath: development) {
+            return development
+        }
+        return installed
+    }
+
+    var vadModelPath: String {
+        if let configured = ProcessInfo.processInfo.environment["CAPTIONFLOW_VAD_MODEL"],
+           !configured.isEmpty,
+           FileManager.default.fileExists(atPath: configured) {
+            return configured
+        }
+        let installed = modelsURL.appendingPathComponent("ggml-silero-v6.2.0.bin").path
+        if FileManager.default.fileExists(atPath: installed) {
+            return installed
+        }
+        if usesCustomModelsDirectory { return installed }
+        let legacy = legacyAppSupportURL.appendingPathComponent("models/ggml-silero-v6.2.0.bin").path
+        if FileManager.default.fileExists(atPath: legacy) {
+            return legacy
+        }
+        let development = defaultProjectRoot() + "/models/ggml-silero-v6.2.0.bin"
+        if FileManager.default.fileExists(atPath: development) {
+            return development
         }
         return installed
     }
@@ -446,7 +503,9 @@ final class DependencyManager: ObservableObject {
     }
 
     var isReady: Bool {
-        FileManager.default.fileExists(atPath: modelPath)
+        isModelsDirectoryAvailable
+            && FileManager.default.fileExists(atPath: modelPath)
+            && FileManager.default.fileExists(atPath: vadModelPath)
             && FileManager.default.fileExists(atPath: ffmpegPath)
             && FileManager.default.fileExists(atPath: ffprobePath)
             && FileManager.default.fileExists(atPath: defaultBackendPath())
@@ -455,12 +514,83 @@ final class DependencyManager: ObservableObject {
 
     var shortStatus: String {
         if isInstalling { return status }
+        if !isModelsDirectoryAvailable { return "外置模型磁盘未连接" }
         return isReady ? "组件已就绪" : "需要安装组件"
     }
 
     func refresh() {
+        if !isModelsDirectoryAvailable {
+            status = "权重目录不可用"
+            detail = "找不到 \(modelsDirectoryDisplay)。请连接外置磁盘或重新选择权重目录。"
+            return
+        }
         status = isReady ? "组件已就绪" : "需要安装组件"
-        detail = isReady ? "模型、FFmpeg 和识别引擎都可用。" : "首次使用需要下载模型和音视频工具。"
+        detail = isReady ? "Whisper、Silero VAD、FFmpeg 和识别引擎都可用。" : "首次使用需要下载 Whisper、Silero VAD 和音视频工具。"
+    }
+
+    func chooseModelsDirectory() {
+        guard !isInstalling else { return }
+        let panel = NSOpenPanel()
+        panel.title = "选择 Whisper 权重保存目录"
+        panel.prompt = "选择"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = customModelsDirectory ?? defaultModelsURL.deletingLastPathComponent()
+        guard panel.runModal() == .OK, let selected = panel.url else { return }
+
+        let previous = modelsURL
+        let decision = migrationDecision(from: previous, to: selected)
+        if decision == .alertThirdButtonReturn { return }
+
+        do {
+            try FileManager.default.createDirectory(at: selected, withIntermediateDirectories: true)
+            if decision == .alertFirstButtonReturn {
+                try migrateModelFiles(from: previous, to: selected)
+            }
+            customModelsDirectory = selected
+            UserDefaults.standard.set(selected.path, forKey: modelsDirectoryKey)
+            status = "权重目录已更新"
+            detail = selected.path
+        } catch {
+            status = "权重目录更新失败"
+            detail = error.localizedDescription
+        }
+    }
+
+    func resetModelsDirectory() {
+        guard !isInstalling else { return }
+        customModelsDirectory = nil
+        UserDefaults.standard.removeObject(forKey: modelsDirectoryKey)
+        refresh()
+    }
+
+    private func migrationDecision(from source: URL, to destination: URL) -> NSApplication.ModalResponse {
+        let names = ["ggml-large-v3-q5_0.bin", "ggml-silero-v6.2.0.bin"]
+        let hasExistingModels = source.standardizedFileURL != destination.standardizedFileURL
+            && names.contains { FileManager.default.fileExists(atPath: source.appendingPathComponent($0).path) }
+        guard hasExistingModels else { return .alertSecondButtonReturn }
+
+        let alert = NSAlert()
+        alert.messageText = "迁移已有权重？"
+        alert.informativeText = "可以把现有 Whisper 和 Silero 权重移动到新目录，避免重新下载。"
+        alert.addButton(withTitle: "迁移已有权重")
+        alert.addButton(withTitle: "仅使用新目录")
+        alert.addButton(withTitle: "取消")
+        return alert.runModal()
+    }
+
+    private func migrateModelFiles(from source: URL, to destination: URL) throws {
+        guard source.standardizedFileURL != destination.standardizedFileURL else { return }
+        for name in ["ggml-large-v3-q5_0.bin", "ggml-silero-v6.2.0.bin"] {
+            let oldURL = source.appendingPathComponent(name)
+            let newURL = destination.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: oldURL.path),
+                  !FileManager.default.fileExists(atPath: newURL.path) else { continue }
+            try FileManager.default.copyItem(at: oldURL, to: newURL)
+            try FileManager.default.removeItem(at: oldURL)
+        }
     }
 
     func install() {
@@ -483,14 +613,26 @@ final class DependencyManager: ObservableObject {
     }
 
     private func installComponents() async throws {
+        guard isModelsDirectoryAvailable else {
+            throw NSError(domain: "CaptionFlow", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: "权重目录不可用，请先连接外置磁盘或重新选择目录。"
+            ])
+        }
         try FileManager.default.createDirectory(at: toolsURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: modelsURL, withIntermediateDirectories: true)
 
-        let model = modelsURL.appendingPathComponent("ggml-small-q5_1.bin")
+        let model = modelsURL.appendingPathComponent("ggml-large-v3-q5_0.bin")
         if !FileManager.default.fileExists(atPath: model.path) {
             status = "下载识别模型"
-            detail = "推荐模型约几十 MB，首次下载取决于网络。"
+            detail = "正在下载 large-v3 Q5 模型（约 1.1 GB）。"
             try await download(modelURL, to: model)
+        }
+
+        let vadModel = modelsURL.appendingPathComponent("ggml-silero-v6.2.0.bin")
+        if !FileManager.default.fileExists(atPath: vadModel.path) {
+            status = "下载语音检测模型"
+            detail = "Silero VAD 用于保留短句并排除音乐和噪声。"
+            try await download(vadModelURL, to: vadModel)
         }
 
         if !FileManager.default.fileExists(atPath: toolsURL.appendingPathComponent("ffmpeg").path) {
@@ -552,10 +694,12 @@ final class JobModel: ObservableObject {
     @Published var targetLanguage: String {
         didSet { UserDefaults.standard.set(targetLanguage, forKey: "targetLanguage") }
     }
-    private let vadNoise: String = "-35dB"
-    private let vadSilence: Double = 0.80
-    private let maxSegment: Double = 240
-    private let maxPackGap: Double = 8
+    private let vadThreshold: Double = 0.45
+    private let vadMinSpeechMS = 120
+    private let vadMinSilenceMS = 500
+    private let vadMaxSpeech: Double = 30
+    private let vadSpeechPadMS = 350
+    private let vadOverlap: Double = 0.80
     private var process: Process?
     private var lastPromptTokens = 0
     private var lastCachedPromptTokens = 0
@@ -564,7 +708,7 @@ final class JobModel: ObservableObject {
     private var usageRecorder: ((String, String, Int, Int, Int, Int) -> Void)?
 
     init() {
-        sourceLanguage = UserDefaults.standard.string(forKey: "sourceLanguage") ?? "auto"
+        sourceLanguage = UserDefaults.standard.string(forKey: "sourceLanguage") ?? "ja"
         targetLanguage = UserDefaults.standard.string(forKey: "targetLanguage") ?? "zh-Hans"
     }
 
@@ -649,6 +793,7 @@ final class JobModel: ObservableObject {
         let process = Process()
         self.process = process
         process.executableURL = URL(fileURLWithPath: defaultBackendPath())
+        let recognitionLanguage = sourceLanguage == "auto" ? "ja" : sourceLanguage
         process.arguments = [
             "transcribe",
             "--input", videoURL.path,
@@ -658,15 +803,18 @@ final class JobModel: ObservableObject {
             "--base-url", modelSettings.baseURL,
             "--llm-model", modelSettings.model,
             "--model", dependencies.modelPath,
+            "--vad-model", dependencies.vadModelPath,
             "--whisper-bin", defaultWhisperBin(),
             "--ffmpeg", dependencies.ffmpegPath,
             "--ffprobe", dependencies.ffprobePath,
-            "--language", sourceLanguage,
+            "--language", recognitionLanguage,
             "--target-language", targetLanguage,
-            "--vad-noise", vadNoise,
-            "--vad-silence", String(format: "%.2f", vadSilence),
-            "--max-segment", String(format: "%.0f", maxSegment),
-            "--max-pack-gap", String(format: "%.0f", maxPackGap)
+            "--vad-threshold", String(format: "%.2f", vadThreshold),
+            "--vad-min-speech-ms", String(vadMinSpeechMS),
+            "--vad-min-silence-ms", String(vadMinSilenceMS),
+            "--vad-max-speech", String(format: "%.0f", vadMaxSpeech),
+            "--vad-speech-pad-ms", String(vadSpeechPadMS),
+            "--vad-overlap", String(format: "%.2f", vadOverlap)
         ]
 
         let stdout = Pipe()
@@ -810,6 +958,7 @@ final class JobModel: ObservableObject {
 
     private func stageTitle(_ stage: String?) -> String {
         switch stage {
+        case "copy": return "复制 SMB 视频"
         case "extract": return "提取音频"
         case "vad": return "分析语音"
         case "whisper": return "识别字幕"
@@ -827,6 +976,7 @@ struct ContentView: View {
     @ObservedObject var appSettings: AppSettings
     @Binding var isShowingModelSettings: Bool
     @State private var isDropTargeted = false
+    @State private var isShowingSMBBrowser = false
 
     var body: some View {
         ZStack {
@@ -845,8 +995,13 @@ struct ContentView: View {
             dependencies.refresh()
         }
         .sheet(isPresented: $isShowingModelSettings) {
-            ModelSettingsView(settings: modelSettings, appLanguage: appSettings.appLanguage)
-                .frame(width: 680, height: 640)
+            ModelSettingsView(settings: modelSettings, dependencies: dependencies, appLanguage: appSettings.appLanguage)
+                .frame(width: 720, height: 720)
+        }
+        .sheet(isPresented: $isShowingSMBBrowser) {
+            SMBBrowserView { url in
+                job.setVideo(url)
+            }
         }
     }
 
@@ -871,8 +1026,17 @@ struct ContentView: View {
             }
             .buttonStyle(.bordered)
 
-            Button {
-                job.chooseVideo()
+            Menu {
+                Button {
+                    job.chooseVideo()
+                } label: {
+                    Label(t("localFile", appSettings.appLanguage), systemImage: "internaldrive")
+                }
+                Button {
+                    isShowingSMBBrowser = true
+                } label: {
+                    Label(t("localNetworkSMB", appSettings.appLanguage), systemImage: "network")
+                }
             } label: {
                 Label(t("chooseVideo", appSettings.appLanguage), systemImage: "film")
             }
@@ -915,9 +1079,14 @@ struct ContentView: View {
 
     private var leftPanel: some View {
         VStack(spacing: 24) {
-            InputGlassCard(job: job, modelSettings: modelSettings, appLanguage: appSettings.appLanguage) {
-                isShowingModelSettings = true
-            }
+            InputGlassCard(
+                job: job,
+                modelSettings: modelSettings,
+                appLanguage: appSettings.appLanguage,
+                onLocalVideoTap: { job.chooseVideo() },
+                onSMBVideoTap: { isShowingSMBBrowser = true },
+                onModelTap: { isShowingModelSettings = true }
+            )
             DependencyGlassCard(dependencies: dependencies, appLanguage: appSettings.appLanguage)
         }
     }
@@ -1018,9 +1187,16 @@ struct DependencyGlassCard: View {
                     .controlSize(.small)
             } else if !dependencies.isReady {
                 Button {
-                    dependencies.install()
+                    if dependencies.isModelsDirectoryAvailable {
+                        dependencies.install()
+                    } else {
+                        dependencies.chooseModelsDirectory()
+                    }
                 } label: {
-                    Label(t("installComponents", appLanguage), systemImage: "arrow.down.to.line")
+                    Label(
+                        dependencies.isModelsDirectoryAvailable ? t("installComponents", appLanguage) : "重新选择权重目录",
+                        systemImage: dependencies.isModelsDirectoryAvailable ? "arrow.down.to.line" : "externaldrive.badge.questionmark"
+                    )
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -1031,7 +1207,7 @@ struct DependencyGlassCard: View {
         .onTapGesture {
             if dependencies.isReady {
                 dependencies.refresh()
-            } else if !dependencies.isInstalling {
+            } else if !dependencies.isInstalling && dependencies.isModelsDirectoryAvailable {
                 dependencies.install()
             }
         }
@@ -1102,6 +1278,7 @@ struct ProgressGlassCard: View {
 
 struct ModelSettingsView: View {
     @ObservedObject var settings: ModelSettings
+    @ObservedObject var dependencies: DependencyManager
     let appLanguage: String
     @Environment(\.dismiss) private var dismiss
 
@@ -1160,6 +1337,74 @@ struct ModelSettingsView: View {
                                 .buttonStyle(.plain)
                             }
                         }
+                    }
+                    .padding(18)
+                    .glassPanel()
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Whisper 权重存储")
+                                .font(.headline)
+                            Spacer()
+                            if dependencies.usesCustomModelsDirectory {
+                                Text(dependencies.isModelsDirectoryAvailable ? "外置目录" : "目录不可用")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(dependencies.isModelsDirectoryAvailable ? appAccent : appWarmAccent)
+                            } else {
+                                Text("默认目录")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.58))
+                            }
+                        }
+
+                        Text(dependencies.modelsDirectoryDisplay)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.white.opacity(0.68))
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+
+                        if !dependencies.isModelsDirectoryAvailable {
+                            Label("外置磁盘未连接。重新连接相同磁盘，或选择新的权重目录。", systemImage: "externaldrive.badge.exclamationmark")
+                                .font(.caption)
+                                .foregroundStyle(appWarmAccent)
+                        }
+
+                        HStack {
+                            Button {
+                                dependencies.chooseModelsDirectory()
+                            } label: {
+                                Label("选择权重目录", systemImage: "externaldrive")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(dependencies.isInstalling)
+
+                            if dependencies.usesCustomModelsDirectory {
+                                Button("恢复默认目录") {
+                                    dependencies.resetModelsDirectory()
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(dependencies.isInstalling)
+                            }
+
+                            Spacer()
+
+                            if !dependencies.isReady && dependencies.isModelsDirectoryAvailable {
+                                Button(dependencies.isInstalling ? "正在安装…" : "安装权重") {
+                                    dependencies.install()
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(dependencies.isInstalling)
+                            }
+                        }
+
+                        if dependencies.isInstalling {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Text(dependencies.detail)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.58))
                     }
                     .padding(18)
                     .glassPanel()
@@ -1253,6 +1498,8 @@ struct InputGlassCard: View {
     @ObservedObject var job: JobModel
     @ObservedObject var modelSettings: ModelSettings
     let appLanguage: String
+    let onLocalVideoTap: () -> Void
+    let onSMBVideoTap: () -> Void
     let onModelTap: () -> Void
 
     var body: some View {
@@ -1267,8 +1514,13 @@ struct InputGlassCard: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                Button {
-                    job.chooseVideo()
+                Menu {
+                    Button(action: onLocalVideoTap) {
+                        Label(t("localFile", appLanguage), systemImage: "internaldrive")
+                    }
+                    Button(action: onSMBVideoTap) {
+                        Label(t("localNetworkSMB", appLanguage), systemImage: "network")
+                    }
                 } label: {
                     CompactPath(title: t("video", appLanguage), value: job.videoName, icon: "film")
                 }
@@ -1573,17 +1825,17 @@ func defaultModelPath() -> String {
         ?? ProcessInfo.processInfo.environment["MOVKNOWN_WHISPER_MODEL"]
     if let env, !env.isEmpty { return env }
     let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    let appSupport = base.appendingPathComponent("CaptionFlow/models/ggml-small-q5_1.bin")
+    let appSupport = base.appendingPathComponent("CaptionFlow/models/ggml-large-v3-q5_0.bin")
     if FileManager.default.fileExists(atPath: appSupport.path) {
         return appSupport.path
     }
-    let legacy = base.appendingPathComponent("VideoLingo/models/ggml-small-q5_1.bin")
+    let legacy = base.appendingPathComponent("VideoLingo/models/ggml-large-v3-q5_0.bin")
     if FileManager.default.fileExists(atPath: legacy.path) {
         return legacy.path
     }
-    let medium = defaultProjectRoot() + "/models/ggml-medium.bin"
-    if FileManager.default.fileExists(atPath: medium) {
-        return medium
+    let development = defaultProjectRoot() + "/models/ggml-large-v3-q5_0.bin"
+    if FileManager.default.fileExists(atPath: development) {
+        return development
     }
     return appSupport.path
 }
