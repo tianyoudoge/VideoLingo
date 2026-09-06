@@ -805,6 +805,7 @@ final class JobModel: ObservableObject {
             "--model", dependencies.modelPath,
             "--vad-model", dependencies.vadModelPath,
             "--whisper-bin", defaultWhisperBin(),
+            "--vad-tool", defaultVADTool(),
             "--ffmpeg", dependencies.ffmpegPath,
             "--ffprobe", dependencies.ffprobePath,
             "--language", recognitionLanguage,
@@ -1850,6 +1851,21 @@ func defaultWhisperBin() -> String {
         return bundled.path
     }
     return defaultProjectRoot() + "/bin/whisper-cli"
+}
+
+func defaultVADTool() -> String {
+    let env = ProcessInfo.processInfo.environment["CAPTIONFLOW_VAD_TOOL"]
+        ?? ProcessInfo.processInfo.environment["VIDEOLINGO_VAD_TOOL"]
+        ?? ProcessInfo.processInfo.environment["MOVKNOWN_VAD_TOOL"]
+    if let env, !env.isEmpty { return env }
+    var candidates: [String] = []
+    if let bundled = Bundle.main.resourceURL?.appendingPathComponent("whisper/whisper-vad-speech-segments"),
+       FileManager.default.fileExists(atPath: bundled.path) {
+        candidates.append(bundled.path)
+    }
+    candidates.append(defaultProjectRoot() + "/bin/whisper-vad-speech-segments")
+    candidates.append(defaultProjectRoot() + "/vendor/whisper.cpp/build/bin/whisper-vad-speech-segments")
+    return candidates.first { FileManager.default.fileExists(atPath: $0) } ?? ""
 }
 
 func defaultProjectRoot() -> String {

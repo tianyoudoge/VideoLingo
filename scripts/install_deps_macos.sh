@@ -25,5 +25,10 @@ if [ -z "$WHISPER_BIN" ]; then
 fi
 ln -sf "$WHISPER_BIN" "$ROOT/bin/whisper-cli"
 
+VAD_BIN="$(find "$ROOT/vendor/whisper.cpp/build" -type f -name whisper-vad-speech-segments | head -1)"
+if [ -n "$VAD_BIN" ]; then
+  ln -sf "$VAD_BIN" "$ROOT/bin/whisper-vad-speech-segments"
+fi
+
 echo "Installed dependencies. whisper-cli -> $ROOT/bin/whisper-cli"
 

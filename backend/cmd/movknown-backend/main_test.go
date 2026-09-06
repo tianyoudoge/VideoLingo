@@ -73,6 +73,23 @@ func TestIsUsableTranslationRejectsRefusals(t *testing.T) {
 
 func TestByteSize(t *testing.T) {
 	if got := byteSize(4 * 1024 * 1024 * 1024); got != "4.0 GiB" {
-		t.Fatalf("byteSize = %q, want 4.0 GiB", got)
+		t.Fatalf("byteSize = %q, want \"4.0 GiB\"", got)
+	}
+}
+
+func TestSpeechCoverage(t *testing.T) {
+	segments := []SpeechSegment{{Start: 10, End: 14}, {Start: 20, End: 21}}
+
+	if got := speechCoverage(Cue{Start: 10, End: 14}, segments); got < 0.99 {
+		t.Fatalf("full coverage = %v, want ~1", got)
+	}
+	if got := speechCoverage(Cue{Start: 13, End: 16}, segments); got >= 0.5 {
+		t.Fatalf("half-covered cue = %v, want < 0.5", got)
+	}
+	if got := speechCoverage(Cue{Start: 30, End: 33}, segments); got != 0 {
+		t.Fatalf("noise cue coverage = %v, want 0", got)
+	}
+	if got := speechCoverage(Cue{Start: 5, End: 5}, segments); got != 1 {
+		t.Fatalf("degenerate cue coverage = %v, want 1 (keep)", got)
 	}
 }

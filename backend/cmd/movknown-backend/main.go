@@ -29,6 +29,7 @@ type Config struct {
 	FFmpeg                string
 	FFprobe               string
 	WhisperBin            string
+	VADTool               string
 	ModelPath             string
 	VADModelPath          string
 	Language              string
@@ -65,6 +66,11 @@ type RepeatedRange struct {
 	End   float64
 	Text  string
 	Count int
+}
+
+type SpeechSegment struct {
+	Start float64
+	End   float64
 }
 
 type Event struct {
@@ -143,6 +149,7 @@ func parseTranscribe(args []string) (Config, error) {
 	fs.StringVar(&cfg.FFmpeg, "ffmpeg", cfg.FFmpeg, "ffmpeg executable")
 	fs.StringVar(&cfg.FFprobe, "ffprobe", cfg.FFprobe, "ffprobe executable")
 	fs.StringVar(&cfg.WhisperBin, "whisper-bin", cfg.WhisperBin, "whisper.cpp whisper-cli executable")
+	fs.StringVar(&cfg.VADTool, "vad-tool", "", "whisper.cpp whisper-vad-speech-segments executable (optional; enables noise-cue filtering)")
 	fs.StringVar(&cfg.ModelPath, "model", cfg.ModelPath, "whisper.cpp ggml model path")
 	fs.StringVar(&cfg.VADModelPath, "vad-model", cfg.VADModelPath, "whisper.cpp Silero VAD model path")
 	fs.StringVar(&cfg.Language, "language", cfg.Language, "source language")
@@ -242,6 +249,7 @@ func runTranscribe(ctx context.Context, cfg Config) error {
 	}
 	normalizeCues(cues)
 	cues = filterCues(cues)
+	cues = dropNoisyCues(ctx, cfg, audio, cues)
 	cues, err = repairRepeatedRanges(ctx, cfg, tmp, audio, duration, cues)
 	if err != nil {
 		return err
@@ -447,6 +455,97 @@ func repairRepeatedRanges(ctx context.Context, cfg Config, tmp string, audio str
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Start < out[j].Start })
 	return out, nil
+}
+
+// dropNoisyCues removes cues whose audio range contains too little speech
+// according to a second, stricter VAD pass. This targets one-shot
+// hallucinations produced by noise or music, which the repeated-text repair
+// cannot catch. It only drops cues, never alters surviving ones; if the VAD
+// tool is unavailable or fails, the original cues are returned unchanged.
+func dropNoisyCues(ctx context.Context, cfg Config, audio string, cues []Cue) []Cue {
+	if cfg.VADTool == "" {
+		return cues
+	}
+	segments, err := runSpeechSegments(ctx, cfg, audio)
+	if err != nil {
+		emit("progress", "vad", "杂音复核不可用："+err.Error()+"，跳过", 0, "")
+		return cues
+	}
+	kept, dropped := 0, 0
+	out := make([]Cue, 0, len(cues))
+	for _, cue := range cues {
+		if speechCoverage(cue, segments) >= 0.5 {
+			out = append(out, cue)
+			kept++
+		} else {
+			dropped++
+			emit("progress", "vad", fmt.Sprintf("杂音复核移除 %.1f-%.1f 秒（语音占比不足）", cue.Start, cue.End), 0, "")
+		}
+	}
+	if dropped > 0 {
+		emit("progress", "vad", fmt.Sprintf("杂音复核完成：保留 %d 条，移除 %d 条疑似噪声/音乐幻觉", kept, dropped), 0, "")
+	}
+	return out
+}
+
+var speechSegmentLine = regexp.MustCompile(`^Speech segment \d+: start = ([0-9.]+), end = ([0-9.]+)$`)
+
+// runSpeechSegments runs whisper-vad-speech-segments on the extracted audio
+// with the same parameters as the main transcription pass. Output timestamps
+// are centiseconds; it returns seconds.
+func runSpeechSegments(ctx context.Context, cfg Config, audio string) ([]SpeechSegment, error) {
+	cmd := exec.CommandContext(ctx, cfg.VADTool,
+		"-f", audio,
+		"-vm", cfg.VADModelPath,
+		"-vt", fmt.Sprintf("%.2f", cfg.VADThreshold),
+		"-vspd", strconv.Itoa(cfg.VADMinSpeechMS),
+		"-vsd", strconv.Itoa(cfg.VADMinSilenceMS),
+		"-vmsd", fmt.Sprintf("%.1f", cfg.VADMaxSpeech),
+		"-vp", strconv.Itoa(cfg.VADSpeechPadMS),
+		"-vo", fmt.Sprintf("%.2f", cfg.VADOverlap),
+		"-np",
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			return nil, err
+		}
+		msg := strings.TrimSpace(string(exitErr.Stderr))
+		if msg == "" {
+			msg = exitErr.Error()
+		}
+		return nil, errors.New(msg)
+	}
+	var segments []SpeechSegment
+	for _, line := range strings.Split(string(out), "\n") {
+		m := speechSegmentLine.FindStringSubmatch(strings.TrimSpace(line))
+		if m == nil {
+			continue
+		}
+		start, err1 := strconv.ParseFloat(m[1], 64)
+		end, err2 := strconv.ParseFloat(m[2], 64)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		segments = append(segments, SpeechSegment{Start: start / 100, End: end / 100})
+	}
+	return segments, nil
+}
+
+func speechCoverage(cue Cue, segments []SpeechSegment) float64 {
+	covered := 0.0
+	for _, seg := range segments {
+		lo := math.Max(cue.Start, seg.Start)
+		hi := math.Min(cue.End, seg.End)
+		if hi > lo {
+			covered += hi - lo
+		}
+	}
+	if cue.End-cue.Start <= 0 {
+		return 1
+	}
+	return covered / (cue.End - cue.Start)
 }
 
 func detectRepeatedRanges(cues []Cue, minimum int) []RepeatedRange {
